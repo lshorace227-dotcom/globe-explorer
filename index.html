@@ -740,20 +740,41 @@ function fillRegionList(){
   markSelected();
 }
 
-/* 左侧大幅国家地图：默认 Mercator；俄/美/加 用等积圆锥；均按质心旋转避开反子午线 */
+/* 取景主体：按质心距离 ≤0.32rad(≈18°) 传递闭包分簇，取「总面积最大」的簇
+   （阿拉斯加单体虽大，本土 48 州总面积更大）；远洋属地不参与取景但仍绘制（spec §4 差异 7） */
+function fitFeatures(features){
+  if (features.length <= 1) return {type:'FeatureCollection', features};
+  const cents = features.map(f=>d3.geoCentroid(f));
+  const n = features.length, comp = new Array(n).fill(-1);
+  let nc = 0;
+  for (let i = 0; i < n; i++){
+    if (comp[i] !== -1) continue;
+    const stack = [i]; comp[i] = nc;
+    while (stack.length){
+      const a = stack.pop();
+      for (let b = 0; b < n; b++){
+        if (comp[b] === -1 && d3.geoDistance(cents[a], cents[b]) <= 0.32){ comp[b] = nc; stack.push(b); }
+      }
+    }
+    nc++;
+  }
+  const area = new Array(nc).fill(0);
+  features.forEach((f,i)=>{ area[comp[i]] += d3.geoArea(f); });
+  let best = 0;
+  for (let c = 1; c < nc; c++) if (area[c] > area[best]) best = c;
+  return {type:'FeatureCollection', features: features.filter((f,i)=>comp[i] === best)};
+}
+
+/* 左侧大幅国家地图：默认 Mercator；俄/美/加 用等积圆锥；均按主体质心旋转避开反子午线 */
 function renderCountryMap(fc, iso3){
   const pane = document.getElementById('map-pane');
   const w = Math.max(pane.clientWidth, 240), h = Math.max(pane.clientHeight, 240);
   cSvg.attr('width', w).attr('height', h).attr('viewBox', '0 0 '+w+' '+h);
-  const cen = d3.geoCentroid(fc);
+  const fit = fitFeatures(fc.features);
+  const cen = d3.geoCentroid(fit);
   let proj = (iso3==='RUS'||iso3==='USA'||iso3==='CAN')
     ? d3.geoConicEqualArea().rotate([-cen[0],0]).parallels([cen[1]-12, cen[1]+12])
     : d3.geoMercator().rotate([-cen[0],0]);
-  let fit = fc;
-  if (iso3==='USA'){   // 取景时剔除关岛等远洋属地，避免本土被挤成一角
-    fit = {type:'FeatureCollection', features: fc.features.filter(d=>{
-      const c = d3.geoCentroid(d); return c[0] < -50 && c[1] > 15; })};
-  }
   proj.fitExtent([[32,32],[w-32,h-32]], fit);
   const path = d3.geoPath(proj);
   cSvg.selectAll('*').remove();
