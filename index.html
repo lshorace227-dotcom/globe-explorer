@@ -594,7 +594,7 @@ function flyTo(f, done){
 
 function handleCountryClick(f){
   if (state.view !== 'globe' || !f) return;
-  enterCountry(f);
+  nav('#/c/'+Number(f.id));
 }
 
 /* ════════ 视图切换（整页 crossfade 400ms） ════════ */
@@ -664,13 +664,20 @@ async function loadCountryData(f, entry, my){
     mapLoading.style.display = 'none';
     renderCountryMap({type:'FeatureCollection', features: adm.features}, entry && entry.a3);
     fillRegionList();
+    if (pendingRegion >= 0){
+      const pr = pendingRegion; pendingRegion = -1;
+      if (pr < state.regions.length) selectRegionNow(pr);
+      else location.replace('#/c/'+state.countryId);
+    }
   } else if (adm.status === 'nodata'){
+    pendingRegion = -1;
     mapLoading.style.display = 'none';
     renderCountryOutline(f);
     regionCaption.textContent = '该国暂无省级行政区数据';
     const slot = document.getElementById('slot-regions');
     if (slot) slot.innerHTML = '<p class="muted">该国暂无省级行政区数据</p>';
   } else {
+    pendingRegion = -1;
     mapLoading.innerHTML = '未能加载省级边界 <a id="adm1-retry" style="cursor:pointer;text-decoration:underline">重试</a>';
     const slot = document.getElementById('slot-regions');
     if (slot) slot.innerHTML = '<p class="muted">未能加载行政区划数据</p>';
@@ -809,7 +816,11 @@ function swapPane(render){
 }
 
 /* ── 地区文章 ── */
-async function handleRegionClick(i){
+function handleRegionClick(i){
+  if (state.countryId == null) return;
+  nav('#/c/'+state.countryId+'/r/'+Number(i));
+}
+async function selectRegionNow(i){
   const f = state.regions[i];
   if (!f) return;
   state.selected = i; markSelected();
@@ -835,7 +846,7 @@ function renderRegionShell(name){
     '<div class="r-sub">'+esc(ci.zh)+' · 一级行政区</div>'+
     '<div id="slot-extract">'+skeletonHTML()+'</div>'+
     '<div id="slot-plate"></div><div id="slot-link"></div>';
-  document.getElementById('btn-back-country').addEventListener('click', backToCountry);
+  document.getElementById('btn-back-country').addEventListener('click', ()=>nav('#/c/'+state.countryId));
 }
 
 function backToCountry(){
@@ -849,7 +860,36 @@ function backToCountry(){
   });
 }
 
-document.getElementById('btn-back').addEventListener('click', goGlobe);
+document.getElementById('btn-back').addEventListener('click', ()=>nav('#/'));
+
+/* ════════ 路由：一切导航统一由 hash 驱动（单一数据流） ════════ */
+function parseHash(){
+  const m = location.hash.match(/^#\/c\/(-?\d+)(?:\/r\/(\d+))?$/);
+  if (!m) return { view:'globe' };
+  return { view:'country', id:Number(m[1]), region: m[2] == null ? -1 : Number(m[2]) };
+}
+function nav(hash){
+  if (location.hash === hash) route();
+  else location.hash = hash;
+}
+let pendingRegion = -1;
+async function route(){
+  const t = parseHash();
+  if (t.view === 'globe'){ goGlobe(); return; }
+  const f = countryById.get(t.id);
+  if (!f){ location.replace('#/'); return; }
+  if (state.countryId !== t.id || state.view === 'globe'){
+    pendingRegion = t.region;
+    await enterCountry(f);
+  } else if (t.region >= 0){
+    if (t.region < state.regions.length) selectRegionNow(t.region);
+    else if (state.regions.length) location.replace('#/c/'+t.id);
+    else pendingRegion = t.region;     // ADM1 尚未就绪，待 loadCountryData 兑现
+  } else if (state.selected !== -1){
+    backToCountry();
+  }
+}
+window.addEventListener('hashchange', route);
 
 /* ════════ 入口 ════════ */
 (async function init(){
@@ -864,6 +904,7 @@ document.getElementById('btn-back').addEventListener('click', goGlobe);
       countryById.set(n, f);
     });
     buildGlobe();
+    route();                            // 支持携带 hash 直开（深链）
   }catch(e){
     globeCaption.textContent = '世界地图数据加载失败，请检查网络后刷新';
     globeCaption.classList.add('active');
@@ -882,12 +923,12 @@ window.addEventListener('resize', ()=>{
   }
 });
 
-/* 测试钩子：与真实点击走同一处理函数 */
+/* 测试钩子：与真实点击走同一路由 */
 window.__app = {
-  selectCountry(numericId){ const f = countryById.get(Number(numericId)); if (f) handleCountryClick(f); },
-  selectRegion(index){ if (state.regions.length) handleRegionClick(Number(index)); },
-  reset(){ goGlobe(); },
-  state(){ return { view: state.view, countryId: state.countryId, selected: state.selected, regions: state.regions.length }; }
+  selectCountry(numericId){ nav('#/c/'+Number(numericId)); },
+  selectRegion(index){ if (state.countryId != null) nav('#/c/'+state.countryId+'/r/'+Number(index)); },
+  reset(){ nav('#/'); },
+  state(){ return { view: state.view, countryId: state.countryId, selected: state.selected, regions: state.regions.length, hash: location.hash }; }
 };
 </script>
 </body>
