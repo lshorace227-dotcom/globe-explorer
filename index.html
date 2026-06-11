@@ -551,8 +551,14 @@ function rewindFeature(f){
 /* geoBoundaries ADM1：meta → LFS 媒体直链；返回 {status:'ok',features} | {status:'nodata'} | {status:'error'} */
 async function fetchADM1(a3){
   if (!a3) return { status:'nodata' };
+  let mr;
   try{
-    const mr = await fetch('https://www.geoboundaries.org/api/current/gbOpen/'+a3+'/ADM1/');
+    mr = await fetch('https://www.geoboundaries.org/api/current/gbOpen/'+a3+'/ADM1/');
+  }catch(e){
+    // geoBoundaries 的 404 错误页不带 CORS 头，fetch 会直接抛错：在线状态下视为「无数据」
+    return navigator.onLine ? { status:'nodata' } : { status:'error' };
+  }
+  try{
     if (mr.status === 404) return { status:'nodata' };
     if (!mr.ok) return { status:'error' };
     let meta = await mr.json();
