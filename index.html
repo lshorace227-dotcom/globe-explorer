@@ -415,12 +415,16 @@ let countries = [], countryById = new Map();
 let zhNameCache = {};                       // numericId → 维基命中的中文名
 let regionWikiCache = new Map();            // shapeName → wiki 结果
 let state = { view:'globe', countryId:null, regions:[], selected:-1, countryInfo:null };
-let paneToken = 0;
+let paneToken = 0, resolveToken = 0;   // resolveToken 独立于 paneToken：地区切换不应打断名称解析
 let gProjection = null, gPath = null, gSvg = null, baseScale = 300;
 
 /* ════════ 工具函数 ════════ */
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function skeletonHTML(){ return '<div class="skel" style="width:58%"></div><div class="skel"></div><div class="skel" style="width:82%"></div>'; }
+
+/* 个别源数据名称的显示/条目修正：geoBoundaries CHN 将 Taiwan Province 列为 ADM1，
+   通用链路会错连到政体条目（中华民国），此处定向改连地理条目 */
+const REGION_OVERRIDES = { 'Taiwan Province': { zh: '台湾省', article: '台湾' } };
 
 /* 国家显示名：内置表 → 维基命中缓存 → 英文 */
 function countryEntry(id){ return COUNTRY_TABLE[id] || null; }
@@ -433,11 +437,25 @@ function countryZh(id, f){
 const WIKI_SUFFIX_RE = /\s+(Province|Municipality|Autonomous Region|Special Administrative Region|Prefecture|Region|State|Territory|District|County|Department|Governorate|Oblast|Krai|Republic|Voivodeship)$/i;
 const HAS_CJK_RE = /[一-鿿]/;
 
+/* localStorage 缓存：7 天 TTL，隐私模式/超限静默降级（spec §5.5） */
+const CACHE_TTL = 7*24*3600*1000;
+function cacheGet(k){
+  try{
+    const r = JSON.parse(localStorage.getItem('hy1:'+k));
+    if (r && Date.now() - r.t < CACHE_TTL) return r.v;
+  }catch(e){}
+  return undefined;
+}
+function cacheSet(k, v){
+  try{ localStorage.setItem('hy1:'+k, JSON.stringify({ t: Date.now(), v: v })); }catch(e){}
+}
+
 /* zh 维基 action API：variant=zh-cn 输出简体标题+摘要+缩略图 */
 async function zhSummary(title){
   try{
     const u = 'https://zh.wikipedia.org/w/api.php?action=query&format=json&origin=*'
-            + '&prop=extracts|pageimages|info&inprop=url|varianttitles&exintro=1&explaintext=1&exsentences=5'
+            + '&prop=extracts|pageimages|info|pageprops&ppprop=disambiguation'
+            + '&inprop=url|varianttitles&exintro=1&explaintext=1&exsentences=5'
             + '&redirects=1&converttitles=1&piprop=thumbnail&pithumbsize=480&variant=zh-cn'
             + '&titles=' + encodeURIComponent(title);
     const r = await fetch(u);
@@ -445,6 +463,7 @@ async function zhSummary(title){
     const j = await r.json();
     const p = j.query && j.query.pages && Object.values(j.query.pages)[0];
     if (!p || p.missing !== undefined || !p.extract) return null;
+    if (p.pageprops && 'disambiguation' in p.pageprops) return null;   // 消歧义页不算命中
     return { lang:'zh', title:(p.varianttitles && p.varianttitles['zh-cn']) || p.title, extract:p.extract,
              thumb:(p.thumbnail&&p.thumbnail.source)||null,
              url:p.fullurl||('https://zh.wikipedia.org/wiki/'+encodeURIComponent(p.title)) };
@@ -458,6 +477,7 @@ async function enSummary(title){
     if (!r.ok) return null;
     const j = await r.json();
     if (!j || !j.extract) return null;
+    if (j.type === 'disambiguation') return null;   // 消歧义页不算命中
     return { lang:'en', title:j.title||title, extract:j.extract,
              thumb:(j.thumbnail&&j.thumbnail.source)||null,
              url:(j.content_urls&&j.content_urls.desktop&&j.content_urls.desktop.page)||null,
@@ -474,20 +494,33 @@ async function qidZhTitle(qid){
     return (sl && sl.zhwiki && sl.zhwiki.title) || null;
   }catch(e){ return null; }
 }
-/* 统一链路：中文名→zh 直查；英文名→en 拿 Q 号→Wikidata 桥接 zhwiki→zh 简体摘要；zh 缺失退 en */
+/* 统一链路：中文名→zh 直查；英文名→en 拿 Q 号→Wikidata 桥接 zhwiki→zh 简体摘要；zh 缺失退 en
+   命中结果走 localStorage 缓存；miss/网络失败不缓存，下次重查 */
 async function wiki(title){
   if (!title) return null;
-  if (HAS_CJK_RE.test(String(title))) return await zhSummary(title);
-  let en = await enSummary(title);
-  if (!en){
-    const stripped = String(title).replace(WIKI_SUFFIX_RE,'');
-    if (stripped !== String(title)) en = await enSummary(stripped);
+  const ck = 'wiki:'+title;
+  const hit = cacheGet(ck);
+  if (hit) return hit;
+  let out = null;
+  if (HAS_CJK_RE.test(String(title))){
+    out = await zhSummary(title);
+  } else {
+    // 候选名：原名 / 去连续重复词（源数据偶见 "Ningxia Ningxia Hui…"）/ 各自再剥行政后缀
+    const dedupWords = s => s.replace(/\b(\S+)( \1\b)+/g, '$1');
+    const cands = [];
+    [String(title), dedupWords(String(title))].forEach(t=>{
+      [t, t.replace(WIKI_SUFFIX_RE,'')].forEach(c=>{ if (c && !cands.includes(c)) cands.push(c); });
+    });
+    let en = null;
+    for (const c of cands){ en = await enSummary(c); if (en) break; }
+    if (en && en.qid){
+      const zt = await qidZhTitle(en.qid);
+      if (zt){ const z = await zhSummary(zt); if (z) out = z; }
+    }
+    if (!out) out = en;
   }
-  if (en && en.qid){
-    const zt = await qidZhTitle(en.qid);
-    if (zt){ const z = await zhSummary(zt); if (z) return z; }
-  }
-  return en;
+  if (out) cacheSet(ck, out);
+  return out;
 }
 
 /* geoBoundaries 环绕方向不统一：d3 球面填充需外环顺时针、内环逆时针，否则填充反转/撕裂 */
@@ -615,7 +648,7 @@ function switchView(name, cb){
 
 function goGlobe(){
   if (state.view === 'globe') return;
-  paneToken++;                                  // 作废一切进行中的装载
+  paneToken++; resolveToken++;                  // 作废一切进行中的装载与名称解析
   d3.select('html').interrupt('fly');
   const wasShown = !viewCountry.classList.contains('hidden');
   state.view = 'globe'; state.countryId = null; state.regions = []; state.selected = -1; state.countryInfo = null;
@@ -660,10 +693,18 @@ async function loadCountryData(f, entry, my){
   if (my !== paneToken) return;
   if (adm.status === 'ok'){
     adm.features.forEach((rf,i)=>{ rf.__i = i; });
+    adm.features.forEach(rf=>{                       // 名称修正 + 缓存预填中文名
+      const n = rf.properties && rf.properties.shapeName;
+      const ov = n && REGION_OVERRIDES[n];
+      if (ov){ rf.__zh = ov.zh; rf.__zhFixed = true; return; }
+      const c = n && cacheGet('wiki:'+n);
+      if (c && c.lang === 'zh' && c.title) rf.__zh = c.title;
+    });
     state.regions = adm.features;
     mapLoading.style.display = 'none';
     renderCountryMap({type:'FeatureCollection', features: adm.features}, entry && entry.a3);
     fillRegionList();
+    resolveRegionNames();
     if (pendingRegion >= 0){
       const pr = pendingRegion; pendingRegion = -1;
       if (pr < state.regions.length) selectRegionNow(pr);
@@ -689,6 +730,31 @@ async function loadCountryData(f, entry, my){
       loadCountryData(f, entry, paneToken);
     };
   }
+}
+
+/* 后台解析地区中文名：并发 4，换国家/回地球仪即停（spec §5.4） */
+async function resolveRegionNames(){
+  const my = ++resolveToken;
+  const tasks = state.regions.map((f,i)=>({f,i})).filter(({f})=>!f.__zh && f.properties && f.properties.shapeName);
+  let cursor = 0;
+  async function worker(){
+    while (cursor < tasks.length){
+      const {f,i} = tasks[cursor++];
+      const name = f.properties.shapeName;
+      const w = regionWikiCache.has(name) ? regionWikiCache.get(name) : await wiki(name);
+      if (my !== resolveToken) return;
+      regionWikiCache.set(name, w);
+      if (w && w.lang === 'zh' && w.title){
+        f.__zh = w.title;
+        const li = document.getElementById('ri-'+i);
+        if (li) li.innerHTML = '<span class="ri-no">'+String(i+1).padStart(2,'0')+'</span>'+esc(w.title);
+        if (state.selected === i){
+          const t = document.getElementById('r-title'); if (t) t.textContent = w.title;
+        }
+      }
+    }
+  }
+  await Promise.all([worker(), worker(), worker(), worker()]);
 }
 
 /* 无 ADM1 数据：画国家轮廓（来自 110m 国界） */
@@ -737,7 +803,7 @@ function fillRegionList(){
   if (!state.regions.length){ slot.innerHTML = '<p class="muted">未能加载行政区划数据</p>'; return; }
   slot.innerHTML = '<div class="region-list">' + state.regions.map((f,i)=>
     '<div class="region-item" id="ri-'+i+'" data-i="'+i+'"><span class="ri-no">'+String(i+1).padStart(2,'0')+'</span>'+
-    esc((f.properties && f.properties.shapeName) || '—')+'</div>').join('') + '</div>';
+    esc(f.__zh || (f.properties && f.properties.shapeName) || '—')+'</div>').join('') + '</div>';
   slot.querySelectorAll('.region-item').forEach(el=>{
     const i = +el.dataset.i;
     el.addEventListener('mouseenter', ()=>hoverRegion(i, true));
@@ -800,7 +866,7 @@ function hoverRegion(i, on){
   const li = document.getElementById('ri-'+i);
   if (li){ li.classList.toggle('hover', on); if (on) li.scrollIntoView({block:'nearest'}); }
   const f = state.regions[i];
-  regionCaption.textContent = (on && f) ? ((f.properties && f.properties.shapeName) || '') : '';
+  regionCaption.textContent = (on && f) ? (f.__zh || (f.properties && f.properties.shapeName) || '') : '';
 }
 function markSelected(){
   cSvg.selectAll('path.region').classed('selected', d=>d.__i === state.selected);
@@ -824,15 +890,18 @@ async function selectRegionNow(i){
   const f = state.regions[i];
   if (!f) return;
   state.selected = i; markSelected();
-  const name = (f.properties && f.properties.shapeName) || '未命名地区';
+  const shapeName = (f.properties && f.properties.shapeName) || '';
+  const name = f.__zh || shapeName || '未命名地区';
   const my = ++paneToken;
   const swapped = swapPane(()=>{ renderRegionShell(name); editPane.scrollTop = 0; });
   let w;
-  if (regionWikiCache.has(name)) w = regionWikiCache.get(name);
-  else { w = await wiki(name); regionWikiCache.set(name, w); }
+  const ov = REGION_OVERRIDES[shapeName];
+  const key = (ov && ov.article) || shapeName || name;
+  if (regionWikiCache.has(key)) w = regionWikiCache.get(key);
+  else { w = await wiki(key); regionWikiCache.set(key, w); }
   await swapped;
   if (my !== paneToken) return;
-  if (w && w.lang === 'zh' && w.title){
+  if (w && w.lang === 'zh' && w.title && !f.__zhFixed){
     const t = document.getElementById('r-title'); if (t) t.textContent = w.title;  // 中文维基命中→中文标题
   }
   fillWikiSlots(w);
