@@ -690,7 +690,7 @@ async function enterCountry(f){
   }));
   wiki(state.countryInfo.zh !== state.countryInfo.en ? state.countryInfo.zh : state.countryInfo.en).then(w=>{
     if (my !== paneToken) return;
-    state.countryInfo.wiki = w; fillWikiSlots(w);
+    state.countryInfo.wiki = w; fillWikiSlots(w, state.countryInfo.zh);
     if (w && w.lang === 'zh' && w.title && !(entry && entry.zh)){   // 表内无中文名的（-99 等）回填
       zhNameCache[id] = w.title;
       state.countryInfo.zh = w.title;
@@ -798,7 +798,7 @@ function renderCountryShell(){
 }
 
 /* 国家页与地区页共用：extract / 图版 / 外链 三个槽位 */
-function fillWikiSlots(w){
+function fillWikiSlots(w, searchName){
   const ex = document.getElementById('slot-extract');
   if (!ex) return;
   if (w && w.extract){
@@ -808,7 +808,9 @@ function fillWikiSlots(w){
     document.getElementById('slot-link').innerHTML = w.url
       ? '<a class="wiki-link" href="'+esc(w.url)+'" target="_blank" rel="noopener">在维基百科查看 →</a>' : '';
   } else {
-    ex.innerHTML = '<p class="muted">未找到该条目的维基简介</p>';
+    ex.innerHTML = '<p class="muted">未找到该条目的维基简介</p>'
+      + (searchName ? '<a class="wiki-link" href="https://zh.wikipedia.org/w/index.php?search='
+        + encodeURIComponent(searchName) + '" target="_blank" rel="noopener">去维基百科搜索 →</a>' : '');
   }
 }
 
@@ -919,7 +921,7 @@ async function selectRegionNow(i){
   if (w && w.lang === 'zh' && w.title && !f.__zhFixed){
     const t = document.getElementById('r-title'); if (t) t.textContent = w.title;  // 中文维基命中→中文标题
   }
-  fillWikiSlots(w);
+  fillWikiSlots(w, name);
 }
 
 function renderRegionShell(name){
@@ -938,7 +940,7 @@ function backToCountry(){
   state.selected = -1; markSelected();
   swapPane(()=>{
     renderCountryShell();
-    fillWikiSlots(state.countryInfo.wiki);   // 国家简介已缓存，不再请求
+    fillWikiSlots(state.countryInfo.wiki, state.countryInfo.zh);   // 国家简介已缓存，不再请求
     fillRegionList();
     editPane.scrollTop = 0;
   });
