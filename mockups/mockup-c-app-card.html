@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>寰宇 · 方向C App 卡片风 Mockup</title>
+<style>
+  /* ===== 基础 ===== */
+  *{box-sizing:border-box;margin:0;padding:0}
+  [hidden]{display:none!important}
+  html,body{height:100%}
+  body{
+    font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+    background:linear-gradient(180deg,#eef4ff 0%,#dce8fa 100%);
+    color:#1e293b;overflow:hidden;-webkit-font-smoothing:antialiased;
+  }
+  button{font-family:inherit}
+
+  /* ===== 地球 ===== */
+  #globeWrap{position:fixed;top:0;left:0;width:100vw;height:62vh;cursor:grab}
+  #globeWrap:active{cursor:grabbing}
+
+  /* ===== 顶部状态栏 ===== */
+  header{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;align-items:center;gap:10px;padding:14px 16px;pointer-events:none;user-select:none}
+  header>*{pointer-events:auto}
+  .logo{background:#fff;color:#2563eb;font-weight:800;font-size:17px;padding:8px 14px;border-radius:14px;letter-spacing:2px;box-shadow:0 4px 14px rgba(37,99,235,.16)}
+  .search{flex:1;max-width:420px;display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.92);border-radius:999px;padding:9px 16px;color:#94a3b8;font-size:13px;box-shadow:0 3px 10px rgba(30,60,120,.08);white-space:nowrap;overflow:hidden}
+  .badge{margin-left:auto;background:#1d4ed8;color:#fff;font-size:10px;font-weight:700;padding:5px 10px;border-radius:999px;letter-spacing:1px;box-shadow:0 3px 10px rgba(29,78,216,.25);white-space:nowrap}
+
+  /* ===== 浮动控件 ===== */
+  #resetBtn{position:fixed;top:66px;left:16px;z-index:25;background:#fff;color:#2563eb;border:none;border-radius:999px;padding:9px 15px;font-size:13px;font-weight:600;box-shadow:0 4px 14px rgba(30,60,120,.15);cursor:pointer;transition:opacity .25s}
+  #resetBtn:hover{background:#f0f6ff}
+  #resetBtn.hide{opacity:0;pointer-events:none}
+  #hint{position:fixed;bottom:26px;left:50%;z-index:15;background:rgba(255,255,255,.95);color:#475569;font-size:13px;padding:10px 18px;border-radius:999px;box-shadow:0 6px 20px rgba(30,60,120,.14);animation:bob 2.4s ease-in-out infinite;user-select:none}
+  #hint.hide{animation:none;opacity:0;pointer-events:none;transition:opacity .25s}
+  @keyframes bob{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,-6px)}}
+
+  /* ===== 加载层 ===== */
+  #loading{position:fixed;top:0;left:0;width:100vw;height:62vh;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#64748b;font-size:13px}
+  .spinner{width:34px;height:34px;border-radius:50%;border:3px solid #c7dbf5;border-top-color:#3b82f6;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ===== Bottom Sheet ===== */
+  #sheet{position:fixed;bottom:0;left:50%;z-index:40;width:min(520px,calc(100vw - 20px));max-height:46vh;background:#fff;border-radius:24px 24px 0 0;box-shadow:0 -8px 30px rgba(30,60,120,.15);transform:translate(-50%,110%);transition:transform .32s ease-out;display:flex;flex-direction:column;padding-top:10px}
+  #sheet.open{transform:translate(-50%,0)}
+  .handle{flex:none;width:42px;height:5px;border-radius:3px;background:#dbe3ef;margin:0 auto 6px}
+  #closeBtn{position:absolute;top:14px;right:14px;z-index:2;width:30px;height:30px;border:none;border-radius:50%;background:#f1f5f9;color:#64748b;font-size:13px;cursor:pointer}
+  #closeBtn:hover{background:#e2e8f0}
+  #sheetScroll{overflow-y:auto;padding:2px 18px calc(10px + env(safe-area-inset-bottom))}
+
+  /* 卡片内容 */
+  .row1{display:flex;align-items:center;gap:12px;padding:4px 34px 8px 0}
+  .flag{font-size:34px;line-height:1}
+  .names{min-width:0}
+  .zhname{font-size:22px;font-weight:700;color:#0f172a;line-height:1.3}
+  .enname{font-size:12px;color:#94a3b8;margin-top:2px}
+  .backBtn{flex:none;width:32px;height:32px;border:none;border-radius:50%;background:#eff6ff;color:#2563eb;font-size:16px;cursor:pointer}
+  .backBtn:hover{background:#dbeafe}
+  .chipline{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 10px}
+  .mini-chip{font-size:12px;font-weight:600;padding:5px 11px;border-radius:999px;text-decoration:none}
+  .mc-blue{background:#eff6ff;color:#2563eb}
+  .mc-blue:hover{background:#dbeafe}
+  .mc-green{background:#ecfdf5;color:#059669}
+  .mini-chip.warn{background:#fff7ed;color:#c2410c}
+  .extract{font-size:14px;line-height:1.75;color:#475569}
+  .extract.muted{color:#94a3b8}
+  .clamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .toggle{border:none;background:none;color:#2563eb;font-size:13px;font-weight:600;cursor:pointer;padding:6px 0}
+  .notice{margin-top:10px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px;line-height:1.6;border-radius:10px;padding:8px 12px}
+  .thumb{display:block;width:100%;border-radius:14px;margin-top:10px}
+
+  /* 行政区 chips */
+  .sec-title{font-size:13px;font-weight:700;color:#64748b;margin:14px 0 8px}
+  #chipsRow{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}
+  #chipsRow::-webkit-scrollbar{display:none}
+  .chip{flex:none;border:1px solid #bfdbfe;background:#fff;color:#1d4ed8;border-radius:999px;padding:7px 15px;font-size:13px;white-space:nowrap;cursor:pointer;transition:background .15s,color .15s}
+  .chip:hover{background:#eff6ff}
+  .chip.active{background:#3b82f6;border-color:#3b82f6;color:#fff;font-weight:600}
+  .chip.shimmer{width:74px;height:31px;border-color:transparent;background:linear-gradient(90deg,#eef2f9 25%,#f8fafc 50%,#eef2f9 75%);background-size:200% 100%;animation:shimmer 1.2s infinite}
+  @keyframes shimmer{to{background-position:-200% 0}}
+
+  .foot{font-size:11px;color:#b6c2d6;text-align:center;padding:12px 0 4px}
+
+  /* globe.gl 悬浮标签 */
+  .glabel{display:inline-block;background:#fff;color:#1e293b;font-size:12px;font-weight:600;padding:4px 10px;border-radius:8px;box-shadow:0 3px 12px rgba(30,60,120,.18);font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif}
+</style>
+</head>
+<body>
+
+<div id="globeWrap"></div>
+
+<header>
+  <div class="logo">寰宇</div>
+  <div class="search">🔍 搜索国家或地区…</div>
+  <div class="badge">方向C · MOCKUP</div>
+</header>
+
+<button id="resetBtn" class="hide">⟲ 回到全球</button>
+<div id="hint">👆 点击任意国家开始探索</div>
+
+<div id="loading"><div class="spinner"></div><div>正在加载地球…</div></div>
+
+<section id="sheet">
+  <div class="handle"></div>
+  <button id="closeBtn" title="收起">✕</button>
+  <div id="sheetScroll">
+    <div id="cardMain"></div>
+    <div id="chipsSection" hidden>
+      <div class="sec-title">行政区划</div>
+      <div id="chipsRow"></div>
+    </div>
+    <div class="foot">实验原型 · 数据：Wikipedia / geoBoundaries / Natural Earth</div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/globe.gl@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<script>
+(async function(){
+  'use strict';
+  // ===== 演示国家表 =====
+  const DEMO = { 156:{iso3:'CHN',iso2:'CN',zh:'中国'}, 840:{iso3:'USA',iso2:'US',zh:'美国'}, 76:{iso3:'BRA',iso2:'BR',zh:'巴西'}, 36:{iso3:'AUS',iso2:'AU',zh:'澳大利亚'}, 392:{iso3:'JPN',iso2:'JP',zh:'日本'}, 643:{iso3:'RUS',iso2:'RU',zh:'俄罗斯'}, 356:{iso3:'IND',iso2:'IN',zh:'印度'}, 276:{iso3:'DEU',iso2:'DE',zh:'德国'}, 250:{iso3:'FRA',iso2:'FR',zh:'法国'}, 124:{iso3:'CAN',iso2:'CA',zh:'加拿大'} };
+  const DEMO_NOTICE = '演示版：省级数据仅开放 中国・美国・巴西・澳大利亚・日本・俄罗斯・印度・德国・法国・加拿大';
+  const HOME = {lat:23, lng:110, altitude:2.4};
+  // ADM1 柔和调色板（h,s,l 轮换）
+  const PAL = [[217,92,68],[187,75,52],[262,80,72],[330,75,72],[152,55,52],[32,90,64]];
+  const pal = (i,a)=>{const p=PAL[i%PAL.length];return `hsla(${p[0]},${p[1]}%,${p[2]}%,${a})`;};
+
+  const $ = id=>document.getElementById(id);
+  const esc = s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const flagOf = iso2=>String.fromCodePoint(...[...iso2.toUpperCase()].map(c=>127397+c.charCodeAt(0)));
+
+  // ===== 状态 =====
+  const state = {countries:[], selected:null, regions:[], regionIdx:-1, hover:null, mode:'globe'};
+  const adm1Cache = {}, wikiCache = {};
+  let nav = 0; // 导航令牌：每次切换视图自增，使过期异步回调失效
+
+  const sheet=$('sheet'), cardMain=$('cardMain'), chipsSection=$('chipsSection'),
+        chipsRow=$('chipsRow'), hint=$('hint'), resetBtn=$('resetBtn'), wrap=$('globeWrap');
+
+  if (typeof Globe!=='function' || typeof topojson==='undefined'){
+    $('loading').innerHTML = '<div>CDN 资源加载失败，请检查网络后刷新。</div>';
+    return;
+  }
+
+  // ===== 名称 / 标签 =====
+  const nameOf = f => DEMO[f.id] ? DEMO[f.id].zh : f.properties.name;
+  const labelOf = f => f.__kind==='region' ? f.properties.shapeName : nameOf(f);
+
+  // ===== 多边形样式 =====
+  function capColor(f){
+    if (f.__kind==='region'){
+      if (state.regionIdx===f.__idx) return 'rgba(37,99,235,0.92)';
+      if (f===state.hover) return pal(f.__idx,0.85);
+      return state.regionIdx>=0 ? pal(f.__idx,0.18) : pal(f.__idx,0.55);
+    }
+    if (!state.selected) return f===state.hover ? 'rgba(59,130,246,0.55)' : 'rgba(255,255,255,0.85)';
+    if (f===state.selected) return state.regions.length ? 'rgba(255,255,255,0.04)' : 'rgba(59,130,246,0.45)';
+    return f===state.hover ? 'rgba(148,163,184,0.32)' : 'rgba(148,163,184,0.18)';
+  }
+  function strokeColor(f){
+    if (f.__kind==='region') return 'rgba(255,255,255,0.9)';
+    return state.selected ? 'rgba(148,163,184,0.5)' : '#7fa8d9';
+  }
+  function altOf(f){
+    if (f.__kind==='region') return state.regionIdx===f.__idx ? 0.022 : (f===state.hover ? 0.02 : 0.012);
+    if (f===state.hover && !state.selected) return 0.02;
+    if (f===state.selected && !state.regions.length) return 0.015;
+    return 0.006;
+  }
+  function refreshStyle(){
+    globe.polygonCapColor(capColor).polygonStrokeColor(strokeColor).polygonAltitude(altOf);
+  }
+  function applyPolygons(){
+    globe.polygonsData(state.regions.length ? state.countries.concat(state.regions) : state.countries);
+    refreshStyle();
+  }
+
+  // ===== globe 初始化 =====
+  const globe = Globe()(wrap)
+    .width(innerWidth).height(Math.round(innerHeight*0.62))
+    .backgroundColor('rgba(0,0,0,0)')
+    .globeImageUrl(null)
+    .showGraticules(false)
+    .showAtmosphere(true).atmosphereColor('#8fbcf0').atmosphereAltitude(0.18)
+    .polygonsTransitionDuration(250)
+    .polygonSideColor(()=>'rgba(127,168,217,0.10)')
+    .polygonLabel(f=>`<span class="glabel">${esc(labelOf(f))}</span>`)
+    .onPolygonHover(f=>{ state.hover=f; wrap.style.cursor=f?'pointer':'grab'; refreshStyle(); })
+    .onPolygonClick(f=>{ if (f.__kind==='region') selectRegion(f.__idx); else selectCountry(f); });
+  const mat = globe.globeMaterial();
+  mat.color.set('#b7d4f5');
+  mat.emissive.set('#8fb7e8'); mat.emissiveIntensity = 0.25; // 提亮背光面
+  globe.pointOfView(HOME, 0);
+
+  const controls = globe.controls();
+  controls.autoRotate = true; controls.autoRotateSpeed = 0.45;
+  const stopSpin = ()=>{ controls.autoRotate = false; };
+  wrap.addEventListener('pointerdown', stopSpin, {passive:true});
+  wrap.addEventListener('wheel', stopSpin, {passive:true});
+  addEventListener('resize', ()=>globe.width(innerWidth).height(Math.round(innerHeight*0.62)));
+
+  // ===== 视角估算：取最大面积多边形的 bbox =====
+  function ringBBox(ring){
+    let rMin=180, rMax=-180;
+    for (const pt of ring){ rMin=Math.min(rMin,pt[0]); rMax=Math.max(rMax,pt[0]); }
+    const shift = (rMax-rMin) > 180; // 跨经度 180°（反子午线）时平移负经度
+    let minLa=90, maxLa=-90, minLn=Infinity, maxLn=-Infinity;
+    for (const pt of ring){
+      const ln = shift && pt[0]<0 ? pt[0]+360 : pt[0];
+      minLa=Math.min(minLa,pt[1]); maxLa=Math.max(maxLa,pt[1]);
+      minLn=Math.min(minLn,ln);    maxLn=Math.max(maxLn,ln);
+    }
+    return {minLa,maxLa,minLn,maxLn};
+  }
+  function viewFor(geom){
+    const polys = geom.type==='Polygon' ? [geom.coordinates] : geom.coordinates;
+    let best=null, bestArea=-1;
+    for (const p of polys){
+      const b = ringBBox(p[0]);
+      const area = (b.maxLa-b.minLa)*(b.maxLn-b.minLn)*Math.max(0.05,Math.cos((b.minLa+b.maxLa)/2*Math.PI/180));
+      if (area>bestArea){ bestArea=area; best=b; }
+    }
+    const lat=(best.minLa+best.maxLa)/2;
+    let lng=(best.minLn+best.maxLn)/2; if (lng>180) lng-=360;
+    const ext = Math.max(best.maxLa-best.minLa, (best.maxLn-best.minLn)*0.7);
+    return {lat, lng, alt: Math.min(1.8, Math.max(0.4, ext/40))};
+  }
+
+  // ===== Wikipedia summary：zh → en =====
+  const WIKI_SUFFIX_RE = /\s+(Province|Municipality|Autonomous Region|Special Administrative Region|Prefecture|Region|State|Territory|District|County|Department|Governorate|Oblast|Krai|Republic|Voivodeship)$/i;
+  const HAS_CJK_RE = /[一-鿿]/;
+  // zh 维基 action API：variant=zh-cn 输出简体标题+摘要+缩略图
+  async function zhSummary(title){
+    try{
+      const u = 'https://zh.wikipedia.org/w/api.php?action=query&format=json&origin=*'
+              + '&prop=extracts|pageimages|info&inprop=url|varianttitles&exintro=1&explaintext=1&exsentences=5'
+              + '&redirects=1&converttitles=1&piprop=thumbnail&pithumbsize=480&variant=zh-cn'
+              + '&titles=' + encodeURIComponent(title);
+      const r = await fetch(u);
+      if (!r.ok) return null;
+      const j = await r.json();
+      const p = j.query && j.query.pages && Object.values(j.query.pages)[0];
+      if (!p || p.missing !== undefined || !p.extract) return null;
+      return { lang:'zh', title:(p.varianttitles && p.varianttitles['zh-cn']) || p.title, extract:p.extract,
+               thumb:(p.thumbnail&&p.thumbnail.source)||null,
+               page:p.fullurl||('https://zh.wikipedia.org/wiki/'+encodeURIComponent(p.title)) };
+    }catch(e){ return null; }
+  }
+  // en 维基 REST summary（带 wikibase_item，用于桥接 zhwiki）
+  async function enSummary(title){
+    try{
+      const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(String(title).replace(/ /g,'_'))}`);
+      if (!r.ok) return null;
+      const j = await r.json();
+      if (!j.extract) return null;
+      return { lang:'en', title:j.title||title, extract:j.extract,
+               thumb:(j.thumbnail && j.thumbnail.source) || null,
+               page:(j.content_urls && j.content_urls.desktop && j.content_urls.desktop.page) || null,
+               qid:j.wikibase_item || null };
+    }catch(e){ return null; }
+  }
+  // Wikidata：Q 号 → 中文维基条目名
+  async function qidZhTitle(qid){
+    try{
+      const r = await fetch('https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&props=sitelinks&sitefilter=zhwiki&ids='+qid);
+      if (!r.ok) return null;
+      const j = await r.json();
+      const sl = j.entities && j.entities[qid] && j.entities[qid].sitelinks;
+      return (sl && sl.zhwiki && sl.zhwiki.title) || null;
+    }catch(e){ return null; }
+  }
+  // 统一链路：中文名→zh 直查；英文名→en 拿 Q 号→Wikidata 桥接 zhwiki→zh 简体摘要；zh 缺失退 en
+  async function wikiZhEn(zhTitle, enTitle){
+    if (zhTitle && HAS_CJK_RE.test(String(zhTitle))){
+      const z = await zhSummary(zhTitle);
+      if (z) return z;
+    }
+    const name = enTitle || zhTitle;
+    let en = await enSummary(name);
+    if (!en){
+      const stripped = String(name).replace(WIKI_SUFFIX_RE,'');
+      if (stripped !== String(name)) en = await enSummary(stripped);
+    }
+    if (en && en.qid){
+      const zt = await qidZhTitle(en.qid);
+      if (zt){ const z2 = await zhSummary(zt); if (z2) return z2; }
+    }
+    return en;
+  }
+
+  // geoBoundaries 环绕方向不统一：球面填充需外环顺时针、内环逆时针，否则 cap 出现三角撕裂
+  function rewindRings(poly){
+    return poly.map((ring, ri)=>{
+      let s = 0;
+      for (let i = 0; i < ring.length - 1; i++) s += (ring[i+1][0] - ring[i][0]) * (ring[i+1][1] + ring[i][1]);
+      const isCW = s > 0, wantCW = ri === 0;
+      return isCW === wantCW ? ring : ring.slice().reverse();
+    });
+  }
+  function rewindFeature(f){
+    const g = f.geometry || {};
+    if (g.type === 'Polygon') g.coordinates = rewindRings(g.coordinates);
+    else if (g.type === 'MultiPolygon') g.coordinates = g.coordinates.map(rewindRings);
+    return f;
+  }
+
+  // ===== geoBoundaries ADM1（LFS 媒体直链优先，失败退回原 URL）=====
+  async function fetchADM1(iso3){
+    if (adm1Cache[iso3]) return adm1Cache[iso3];
+    const r = await fetch(`https://www.geoboundaries.org/api/current/gbOpen/${iso3}/ADM1/`);
+    if (!r.ok) throw new Error('meta '+r.status);
+    const meta = await r.json();
+    const raw = meta.simplifiedGeometryGeoJSON;
+    let gj = null;
+    const m = /github\.com\/wmgeolab\/geoBoundaries\/raw\/([^/]+)\/(.+)$/.exec(raw||'');
+    if (m){
+      try{
+        const c = await fetch(`https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/${m[1]}/${m[2]}`);
+        if (c.ok) gj = await c.json();
+      }catch(e){ /* 镜像失败则走原地址 */ }
+    }
+    if (!gj){
+      const o = await fetch(raw);
+      if (!o.ok) throw new Error('geo '+o.status);
+      gj = await o.json();
+    }
+    const feats = (gj.features||[]).filter(f=>f && f.geometry);
+    feats.forEach((f,i)=>{ f.__kind='region'; f.__idx=i; rewindFeature(f); });
+    adm1Cache[iso3] = feats;
+    return feats;
+  }
+
+  // ===== Bottom sheet =====
+  const openSheet = ()=>sheet.classList.add('open');
+  const closeSheet = ()=>sheet.classList.remove('open');
+  $('closeBtn').addEventListener('click', closeSheet);
+
+  // ===== 国家卡片 =====
+  function renderCountryCard(f){
+    const demo = DEMO[f.id];
+    cardMain.innerHTML = `
+      <div class="row1">
+        <span class="flag">${demo ? flagOf(demo.iso2) : '🌍'}</span>
+        <div class="names">
+          <div class="zhname" id="zhName">${esc(demo ? demo.zh : f.properties.name)}</div>
+          <div class="enname">${esc(f.properties.name)}</div>
+        </div>
+      </div>
+      <div class="chipline">
+        <a class="mini-chip mc-blue" id="wikiChip" target="_blank" rel="noopener" hidden>维基百科 ↗</a>
+        <span class="mini-chip mc-green" id="countChip" ${demo?'':'hidden'}>行政区加载中…</span>
+      </div>
+      <p class="extract clamp" id="extract">简介加载中…</p>
+      <button class="toggle" id="toggleBtn" hidden>展开</button>
+      ${demo ? '' : `<div class="notice">${DEMO_NOTICE}</div>`}`;
+    $('toggleBtn').addEventListener('click', e=>{
+      const p = $('extract');
+      p.classList.toggle('clamp');
+      e.target.textContent = p.classList.contains('clamp') ? '展开' : '收起';
+    });
+    loadCountryWiki(f);
+  }
+  async function loadCountryWiki(f){
+    const my = nav, demo = DEMO[f.id], key = 'c:'+f.properties.name;
+    let w = wikiCache[key];
+    if (w===undefined){
+      w = await wikiZhEn(demo ? demo.zh : f.properties.name, f.properties.name);
+      wikiCache[key] = w;
+    }
+    if (my!==nav || state.mode!=='country' || state.selected!==f) return;
+    const ex=$('extract'), tg=$('toggleBtn'), wc=$('wikiChip'), zn=$('zhName');
+    if (!ex) return;
+    if (w){
+      ex.textContent = w.extract;
+      if (tg) tg.hidden = false;
+      if (wc && w.page){ wc.href = w.page; wc.hidden = false; }
+      if (zn && w.lang==='zh' && !demo) zn.textContent = w.title; // 非演示国家用 zh wiki 标题作中文名
+    } else {
+      ex.textContent = '简介加载失败，请检查网络后重试。';
+      ex.classList.add('muted');
+    }
+  }
+  function setCountChip(n){
+    const el = $('countChip');
+    if (!el) return;
+    if (n<0){ el.textContent='行政区加载失败'; el.classList.add('warn'); }
+    else el.textContent = `${n} 个一级行政区`;
+  }
+
+  // ===== 地区卡片 =====
+  function renderRegionCard(f){
+    const c = state.selected, demo = DEMO[c.id];
+    cardMain.innerHTML = `
+      <div class="row1">
+        <button class="backBtn" id="backBtn" title="返回国家">←</button>
+        <div class="names">
+          <div class="zhname" id="zhName">${esc(f.properties.shapeName)}</div>
+          <div class="enname">${esc(demo ? demo.zh : c.properties.name)} · ${esc(c.properties.name)}</div>
+        </div>
+      </div>
+      <div class="chipline"><a class="mini-chip mc-blue" id="wikiChip" target="_blank" rel="noopener" hidden>维基百科 ↗</a></div>
+      <p class="extract" id="extract">简介加载中…</p>
+      <div id="mediaBox"></div>`;
+    $('backBtn').addEventListener('click', backToCountry);
+    loadRegionWiki(f);
+  }
+  async function loadRegionWiki(f){
+    const my = nav, key = 'r:'+DEMO[state.selected.id].iso3+':'+f.__idx;
+    let w = wikiCache[key];
+    if (w===undefined){
+      w = await wikiZhEn(null, f.properties.shapeName);
+      wikiCache[key] = w;
+    }
+    if (my!==nav || state.mode!=='region') return;
+    const ex=$('extract'), zn=$('zhName'), wc=$('wikiChip'), mb=$('mediaBox');
+    if (!ex) return;
+    if (w){
+      ex.textContent = w.extract;
+      if (zn && w.lang==='zh') zn.textContent = w.title;
+      if (wc && w.page){ wc.href = w.page; wc.hidden = false; }
+      if (mb && w.thumb){
+        const img = new Image();
+        img.className='thumb'; img.alt=w.title; img.src=w.thumb;
+        mb.appendChild(img);
+      }
+    } else {
+      ex.textContent = '暂未找到该地区的维基简介。';
+      ex.classList.add('muted');
+    }
+  }
+
+  // ===== 行政区 chips =====
+  function showChipShimmer(){
+    chipsSection.hidden = false;
+    chipsRow.innerHTML = '<span class="chip shimmer"></span>'.repeat(5);
+  }
+  function renderChips(){
+    chipsSection.hidden = !state.regions.length;
+    chipsRow.innerHTML = state.regions
+      .map((f,i)=>`<button class="chip${i===state.regionIdx?' active':''}" data-i="${i}">${esc(f.properties.shapeName)}</button>`)
+      .join('');
+  }
+  chipsRow.addEventListener('click', e=>{
+    const b = e.target.closest('.chip');
+    if (b && b.dataset.i!=null) selectRegion(b.dataset.i);
+  });
+  function setActiveChip(i){
+    [...chipsRow.children].forEach((c,j)=>c.classList.toggle('active', j===i));
+    const a = chipsRow.children[i];
+    if (a) a.scrollIntoView({behavior:'smooth', inline:'center', block:'nearest'});
+  }
+
+  // ===== 导航动作 =====
+  async function selectCountry(f){
+    if (!f || f.__kind==='region') return;
+    const my = ++nav;
+    stopSpin(); hint.classList.add('hide');
+    state.selected=f; state.mode='country'; state.regions=[]; state.regionIdx=-1; state.hover=null;
+    applyPolygons();
+    const v = viewFor(f.geometry);
+    globe.pointOfView({lat:v.lat, lng:v.lng, altitude:v.alt}, 900);
+    resetBtn.classList.remove('hide');
+    renderCountryCard(f);
+    openSheet();
+    const demo = DEMO[f.id];
+    if (!demo){ chipsSection.hidden = true; return; }
+    showChipShimmer();
+    try{
+      const feats = await fetchADM1(demo.iso3);
+      if (my!==nav) return;
+      state.regions = feats;
+      applyPolygons(); renderChips(); setCountChip(feats.length);
+    }catch(e){
+      if (my!==nav) return;
+      chipsSection.hidden = true; setCountChip(-1);
+    }
+  }
+  function selectRegion(i){
+    i = Number(i);
+    if (!state.regions.length || isNaN(i) || i<0 || i>=state.regions.length) return;
+    ++nav;
+    stopSpin();
+    state.regionIdx = i; state.mode = 'region';
+    const f = state.regions[i];
+    refreshStyle();
+    const v = viewFor(f.geometry);
+    globe.pointOfView({lat:v.lat, lng:v.lng, altitude:Math.max(0.35, v.alt*0.75)}, 800);
+    renderRegionCard(f);
+    openSheet();
+    setActiveChip(i);
+  }
+  function backToCountry(){
+    ++nav;
+    state.mode='country'; state.regionIdx=-1;
+    refreshStyle(); setActiveChip(-1);
+    renderCountryCard(state.selected);
+    setCountChip(state.regions.length);
+    const v = viewFor(state.selected.geometry);
+    globe.pointOfView({lat:v.lat, lng:v.lng, altitude:v.alt}, 700);
+  }
+  function reset(){
+    ++nav;
+    state.selected=null; state.regions=[]; state.regionIdx=-1; state.mode='globe'; state.hover=null;
+    applyPolygons(); closeSheet();
+    resetBtn.classList.add('hide'); hint.classList.remove('hide');
+    globe.pointOfView(HOME, 900);
+    controls.autoRotate = true;
+  }
+  resetBtn.addEventListener('click', reset);
+
+  // ===== 测试钩子（与真实点击同一处理函数）=====
+  window.__mockup = {
+    selectCountry(numericId){
+      const f = state.countries.find(c=>c.id===Number(numericId));
+      if (f) selectCountry(f);
+    },
+    selectRegion,
+    reset
+  };
+
+  // ===== 加载国界 =====
+  try{
+    const res = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+    if (!res.ok) throw new Error('atlas '+res.status);
+    const topo = await res.json();
+    const feats = topojson.feature(topo, topo.objects.countries).features;
+    feats.forEach(f=>{ f.id = Number(f.id); f.__kind='country'; }); // id 可能带前导零，统一 Number
+    state.countries = feats;
+    applyPolygons();
+    $('loading').remove();
+  }catch(e){
+    $('loading').innerHTML = '<div>国界数据加载失败，请检查网络后刷新。</div>';
+  }
+})();
+</script>
+</body>
+</html>

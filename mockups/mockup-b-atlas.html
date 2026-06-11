@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>寰宇 · 方向B · 地图册 MOCKUP</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<style>
+  :root{
+    --paper:#f6f1e7; --ink:#2b2620; --land:#ded7c3; --line:#8a8170;
+    --terra:#b9543a; --sea:#eee8da; --rule:#d8d0bd;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+  body{
+    font-family:'Noto Serif SC', serif; color:var(--ink); overflow:hidden;
+    background:radial-gradient(ellipse at 50% 28%, #f9f5ec 0%, var(--paper) 62%, #efe7d6 100%);
+    display:flex; flex-direction:column;
+  }
+  ::selection{ background:var(--ink); color:var(--paper); }
+
+  /* ── 刊头：细双横线 ── */
+  .masthead{ margin:18px 32px 0; border-top:1px solid var(--ink); border-bottom:1px solid var(--ink); flex:none; }
+  .masthead-inner{
+    margin:2.5px 0; border-top:1px solid var(--ink); border-bottom:1px solid var(--ink);
+    text-align:center; padding:9px 0 8px; font-size:12px; font-weight:600;
+    letter-spacing:.42em; text-indent:.42em;
+  }
+
+  /* ── 视图切换 ── */
+  .view{ flex:1; min-height:0; display:flex; flex-direction:column; opacity:1; transition:opacity .4s ease; }
+  .view.fading{ opacity:0; }
+  .view.hidden{ display:none; }
+
+  /* ── 视图一：地球仪 ── */
+  #globe-wrap{ flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+  #globe-wrap svg{ display:block; }
+  .g-sea{ fill:var(--sea); stroke:none; }
+  .g-grat{ fill:none; stroke:#d8d0bd; stroke-width:.5; }
+  .g-rim{ fill:none; stroke:var(--ink); stroke-width:1; pointer-events:none; }
+  .country{ fill:var(--land); stroke:var(--line); stroke-width:.5; cursor:pointer; }
+  .country:hover{ fill:rgba(185,84,58,.55); }
+  #globe-caption{ flex:none; height:46px; text-align:center; padding-top:9px;
+    font-size:12px; letter-spacing:.3em; color:var(--line); }
+  #globe-caption.active{ font-style:italic; font-size:21px; letter-spacing:.1em; color:var(--ink); padding-top:4px; }
+
+  #foot{ position:fixed; left:26px; bottom:16px; font-size:11px; letter-spacing:.1em; color:var(--line); z-index:5; }
+  body.in-country #foot{ display:none; }
+
+  /* ── 非演示国家：侧卡片 ── */
+  #side-card{
+    position:fixed; top:96px; right:-400px; width:344px; max-height:68vh; overflow-y:auto;
+    background:var(--paper); border:1px solid var(--line); box-shadow:0 12px 34px rgba(43,38,32,.14);
+    padding:26px 28px 22px; z-index:20; opacity:0; transition:right .35s ease, opacity .35s ease;
+  }
+  #side-card.open{ right:30px; opacity:1; }
+  .card-title{ font-weight:900; font-size:25px; letter-spacing:.05em; margin-bottom:2px; }
+  .hint{ font-size:11.5px; line-height:1.9; color:var(--line); }
+
+  /* ── 视图二：国家详情 ── */
+  .topbar{ flex:none; display:flex; justify-content:space-between; align-items:baseline;
+    padding:13px 32px 10px; border-bottom:1px solid var(--rule); }
+  .text-btn{ font-family:inherit; background:none; border:none; cursor:pointer;
+    font-size:14px; color:var(--ink); letter-spacing:.06em; padding:0; user-select:none; }
+  .text-btn:hover{ color:var(--terra); }
+  .crumb{ font-size:12px; letter-spacing:.28em; color:var(--line); }
+  .crumb b{ color:var(--ink); font-weight:600; }
+  .country-body{ flex:1; min-height:0; display:flex; }
+
+  #map-pane{ width:58%; position:relative; }
+  #country-map{ position:absolute; inset:0; }
+  .region{ stroke:var(--ink); stroke-width:.6; cursor:pointer; transition:fill .15s; }
+  .region.hover{ fill:rgba(185,84,58,.45) !important; }
+  .region.selected{ fill:var(--terra) !important; stroke:#fff; stroke-width:1; }
+  #map-loading{ position:absolute; left:0; right:0; top:46%; text-align:center;
+    font-style:italic; font-size:14px; color:var(--line); letter-spacing:.2em; pointer-events:none; }
+  #region-caption{ position:absolute; left:0; right:0; bottom:14px; text-align:center;
+    font-style:italic; font-size:17px; color:var(--ink); pointer-events:none; }
+
+  #edit-pane{ width:42%; border-left:1px solid var(--rule); padding:40px 48px 64px;
+    overflow-y:auto; transition:opacity .18s ease; }
+  #edit-pane.pane-out{ opacity:0; }
+  .c-title{ font-weight:900; font-size:54px; line-height:1.15; letter-spacing:.05em; margin:4px 0 6px; }
+  .c-title.r-size{ font-size:38px; }
+  .c-en{ font-variant:small-caps; letter-spacing:.16em; color:var(--line); font-size:15px; margin-bottom:24px; }
+  .r-sub{ font-size:12px; letter-spacing:.3em; color:var(--line); margin-bottom:24px; }
+  .extract{ text-align:justify; line-height:1.9; font-size:15px; text-indent:2em; }
+  .extract.small{ font-size:13.5px; line-height:1.8; margin:10px 0 14px; }
+  .muted{ font-size:13.5px; color:var(--line); font-style:italic; margin:10px 0; }
+  .plate{ margin:28px 0 6px; }
+  .plate img{ width:100%; display:block; background:#fff; border:1px solid var(--ink); padding:6px; }
+  .plate figcaption{ font-size:11px; color:var(--line); letter-spacing:.22em; margin-top:7px; }
+  .wiki-link{ display:inline-block; margin-top:18px; font-size:13.5px; color:var(--terra);
+    text-decoration:none; border-bottom:1px solid rgba(185,84,58,.45); padding-bottom:1px; letter-spacing:.04em; }
+  .wiki-link:hover{ border-bottom-color:var(--terra); }
+  hr.rule{ border:0; border-top:1px solid var(--line); margin:30px 0 20px; }
+  .sec-title{ font-size:13px; font-weight:600; letter-spacing:.42em; margin-bottom:16px; }
+  .region-list{ display:grid; grid-template-columns:1fr 1fr; column-gap:22px; row-gap:1px; }
+  .region-item{ font-size:13.5px; line-height:1.5; padding:5px 2px 4px; cursor:pointer;
+    border-bottom:1px dotted #cfc7b2; user-select:none; }
+  .region-item .ri-no{ font-size:10.5px; color:var(--line); letter-spacing:.06em; margin-right:7px; }
+  .region-item:hover, .region-item.hover{ color:var(--terra); }
+  .region-item.selected{ color:var(--terra); font-weight:600; }
+  .back-line{ margin-bottom:18px; }
+  .back-line .text-btn{ font-size:13px; color:var(--line); }
+  .back-line .text-btn:hover{ color:var(--terra); }
+
+  /* ── 加载骨架（shimmer） ── */
+  .skel{ height:14px; margin:13px 0; border-radius:2px;
+    background:linear-gradient(90deg,#e7e0cf 25%,#f0eadb 38%,#e7e0cf 60%); background-size:400% 100%;
+    animation:shimmer 1.25s linear infinite; }
+  @keyframes shimmer{ 0%{background-position:100% 0} 100%{background-position:-100% 0} }
+</style>
+</head>
+<body>
+
+<header class="masthead"><div class="masthead-inner">寰 宇 地 图 册 · ATLAS · 方向B · MOCKUP</div></header>
+
+<!-- 视图一：地球仪 -->
+<main id="view-globe" class="view">
+  <div id="globe-wrap"></div>
+  <div id="globe-caption">拖 拽 旋 转 · 滚 轮 缩 放 · 点 击 国 家 翻 开 图 册</div>
+</main>
+
+<!-- 视图二：国家详情（地图册内页） -->
+<main id="view-country" class="view hidden">
+  <div class="topbar">
+    <button id="btn-back" class="text-btn">← 返回地球仪</button>
+    <div class="crumb">全球 · <b id="bc-country"></b></div>
+  </div>
+  <div class="country-body">
+    <div id="map-pane">
+      <svg id="country-map"></svg>
+      <div id="map-loading" style="display:none">正在装载地图…</div>
+      <div id="region-caption"></div>
+    </div>
+    <div id="edit-pane"></div>
+  </div>
+</main>
+
+<aside id="side-card"></aside>
+<footer id="foot">实验原型 · 数据：Wikipedia / geoBoundaries / Natural Earth</footer>
+
+<script>
+'use strict';
+/* ════════ 常量与状态 ════════ */
+const DEMO = { 156:{iso3:'CHN',zh:'中国'}, 840:{iso3:'USA',zh:'美国'}, 76:{iso3:'BRA',zh:'巴西'},
+  36:{iso3:'AUS',zh:'澳大利亚'}, 392:{iso3:'JPN',zh:'日本'}, 643:{iso3:'RUS',zh:'俄罗斯'},
+  356:{iso3:'IND',zh:'印度'}, 276:{iso3:'DEU',zh:'德国'}, 250:{iso3:'FRA',zh:'法国'}, 124:{iso3:'CAN',zh:'加拿大'} };
+const DEMO_LIST = '中国・美国・巴西・澳大利亚・日本・俄罗斯・印度・德国・法国・加拿大';
+const PAPER_FILLS = ['#e3dcc7','#dad2bc','#e9e2d1','#d2c9b1'];
+const DEFAULT_HINT = '拖 拽 旋 转 · 滚 轮 缩 放 · 点 击 国 家 翻 开 图 册';
+
+const viewGlobe   = document.getElementById('view-globe');
+const viewCountry = document.getElementById('view-country');
+const cardEl      = document.getElementById('side-card');
+const editPane    = document.getElementById('edit-pane');
+const mapLoading  = document.getElementById('map-loading');
+const regionCaption = document.getElementById('region-caption');
+const globeCaption  = document.getElementById('globe-caption');
+const cSvg = d3.select('#country-map');
+
+let countries = [], countryById = new Map();
+let zhNameCache = {};                       // numericId → 维基命中的中文名
+let regionWikiCache = new Map();            // shapeName → wiki 结果
+let state = { view:'globe', countryId:null, regions:[], selected:-1, countryInfo:null };
+let paneToken = 0, cardToken = 0, cardOpen = false;
+let gProjection = null, gPath = null, gSvg = null, baseScale = 300;
+
+/* ════════ 工具函数 ════════ */
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function skeletonHTML(){ return '<div class="skel" style="width:58%"></div><div class="skel"></div><div class="skel" style="width:82%"></div>'; }
+
+/* 维基 REST summary：zh → en 依次尝试，命中（extract 非空）即返回 */
+const WIKI_SUFFIX_RE = /\s+(Province|Municipality|Autonomous Region|Special Administrative Region|Prefecture|Region|State|Territory|District|County|Department|Governorate|Oblast|Krai|Republic|Voivodeship)$/i;
+const HAS_CJK_RE = /[一-鿿]/;
+
+/* zh 维基 action API：variant=zh-cn 输出简体标题+摘要+缩略图 */
+async function zhSummary(title){
+  try{
+    const u = 'https://zh.wikipedia.org/w/api.php?action=query&format=json&origin=*'
+            + '&prop=extracts|pageimages|info&inprop=url|varianttitles&exintro=1&explaintext=1&exsentences=5'
+            + '&redirects=1&converttitles=1&piprop=thumbnail&pithumbsize=480&variant=zh-cn'
+            + '&titles=' + encodeURIComponent(title);
+    const r = await fetch(u);
+    if (!r.ok) return null;
+    const j = await r.json();
+    const p = j.query && j.query.pages && Object.values(j.query.pages)[0];
+    if (!p || p.missing !== undefined || !p.extract) return null;
+    return { lang:'zh', title:(p.varianttitles && p.varianttitles['zh-cn']) || p.title, extract:p.extract,
+             thumb:(p.thumbnail&&p.thumbnail.source)||null,
+             url:p.fullurl||('https://zh.wikipedia.org/wiki/'+encodeURIComponent(p.title)) };
+  }catch(e){ return null; }
+}
+/* en 维基 REST summary（带 wikibase_item，用于桥接 zhwiki） */
+async function enSummary(title){
+  try{
+    const r = await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/'
+                          + encodeURIComponent(String(title).replace(/ /g,'_')));
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j || !j.extract) return null;
+    return { lang:'en', title:j.title||title, extract:j.extract,
+             thumb:(j.thumbnail&&j.thumbnail.source)||null,
+             url:(j.content_urls&&j.content_urls.desktop&&j.content_urls.desktop.page)||null,
+             qid:j.wikibase_item||null };
+  }catch(e){ return null; }
+}
+/* Wikidata：Q 号 → 中文维基条目名 */
+async function qidZhTitle(qid){
+  try{
+    const r = await fetch('https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&props=sitelinks&sitefilter=zhwiki&ids='+qid);
+    if (!r.ok) return null;
+    const j = await r.json();
+    const sl = j.entities && j.entities[qid] && j.entities[qid].sitelinks;
+    return (sl && sl.zhwiki && sl.zhwiki.title) || null;
+  }catch(e){ return null; }
+}
+/* 统一链路：中文名→zh 直查；英文名→en 拿 Q 号→Wikidata 桥接 zhwiki→zh 简体摘要；zh 缺失退 en */
+async function wiki(title){
+  if (!title) return null;
+  if (HAS_CJK_RE.test(String(title))) return await zhSummary(title);
+  let en = await enSummary(title);
+  if (!en){
+    const stripped = String(title).replace(WIKI_SUFFIX_RE,'');
+    if (stripped !== String(title)) en = await enSummary(stripped);
+  }
+  if (en && en.qid){
+    const zt = await qidZhTitle(en.qid);
+    if (zt){ const z = await zhSummary(zt); if (z) return z; }
+  }
+  return en;
+}
+
+/* geoBoundaries 环绕方向不统一：d3 球面填充需外环顺时针、内环逆时针，否则填充反转/撕裂 */
+function rewindRings(poly){
+  return poly.map((ring, ri)=>{
+    let s = 0;
+    for (let i = 0; i < ring.length - 1; i++) s += (ring[i+1][0] - ring[i][0]) * (ring[i+1][1] + ring[i][1]);
+    const isCW = s > 0, wantCW = ri === 0;
+    return isCW === wantCW ? ring : ring.slice().reverse();
+  });
+}
+function rewindFeature(f){
+  const g = f.geometry || {};
+  if (g.type === 'Polygon') g.coordinates = rewindRings(g.coordinates);
+  else if (g.type === 'MultiPolygon') g.coordinates = g.coordinates.map(rewindRings);
+  return f;
+}
+
+/* geoBoundaries ADM1：meta → github raw URL 改写为 LFS 媒体直链，失败退回原 URL */
+async function fetchADM1(iso3){
+  try{
+    const mr = await fetch('https://www.geoboundaries.org/api/current/gbOpen/'+iso3+'/ADM1/');
+    if (!mr.ok) return null;
+    let meta = await mr.json();
+    if (Array.isArray(meta)) meta = meta[0];
+    const src = meta && meta.simplifiedGeometryGeoJSON;
+    if (!src) return null;
+    let gj = null;
+    const m = src.match(/github\.com\/wmgeolab\/geoBoundaries\/raw\/([^/]+)\/(.+)$/);
+    if (m){
+      try{
+        const r = await fetch('https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/'+m[1]+'/'+m[2]);
+        if (r.ok) gj = await r.json();
+      }catch(e){ /* CDN 失败，退回原始 URL */ }
+    }
+    if (!gj){
+      const r2 = await fetch(src);
+      gj = r2.ok ? await r2.json() : null;
+    }
+    if (gj && gj.features) gj.features.forEach(rewindFeature);
+    return gj;
+  }catch(e){ return null; }
+}
+
+/* ════════ 视图一：地球仪 ════════ */
+function buildGlobe(){
+  const wrap = d3.select('#globe-wrap');
+  wrap.select('svg').remove();
+  const dia = Math.min(window.innerWidth, window.innerHeight) * 0.76;
+  const size = Math.round(dia + 6);
+  baseScale = dia / 2;
+  const keepRotate = gProjection ? gProjection.rotate() : [-100, -28];  // 初始正对东亚
+  gProjection = d3.geoOrthographic().translate([size/2, size/2]).scale(baseScale)
+    .rotate(keepRotate).precision(0.3);
+  gPath = d3.geoPath(gProjection);
+  gSvg = wrap.append('svg').attr('width', size).attr('height', size);
+  gSvg.append('path').datum({type:'Sphere'}).attr('class','g-sea');
+  gSvg.append('path').datum(d3.geoGraticule10()).attr('class','g-grat');
+  gSvg.append('g').selectAll('path').data(countries).join('path')
+    .attr('class','country')
+    .on('mouseenter', (e,d)=>setGlobeCaption(d))
+    .on('mouseleave', ()=>setGlobeCaption(null))
+    .on('click', (e,d)=>{ e.stopPropagation(); handleCountryClick(d); });
+  gSvg.append('path').datum({type:'Sphere'}).attr('class','g-rim');
+  /* 拖拽旋转：纬度夹在 ±90，灵敏度随缩放降低 */
+  gSvg.call(d3.drag().on('drag', (e)=>{
+    const k = 0.25 * baseScale / gProjection.scale();
+    const r = gProjection.rotate();
+    gProjection.rotate([r[0] + e.dx*k, Math.max(-90, Math.min(90, r[1] - e.dy*k))]);
+    redrawGlobe();
+  }));
+  /* 滚轮缩放：0.7x ~ 4x */
+  gSvg.node().addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    const s = Math.max(baseScale*0.7, Math.min(baseScale*4, gProjection.scale()*Math.pow(1.0018, -e.deltaY)));
+    gProjection.scale(s); redrawGlobe();
+  }, {passive:false});
+  redrawGlobe();
+}
+function redrawGlobe(){ gSvg.selectAll('path').attr('d', gPath); }
+
+function setGlobeCaption(d){
+  if (!d){ globeCaption.textContent = DEFAULT_HINT; globeCaption.classList.remove('active'); return; }
+  const id = Number(d.id);
+  globeCaption.textContent = (DEMO[id] && DEMO[id].zh) || zhNameCache[id] || (d.properties && d.properties.name) || '未知地区';
+  globeCaption.classList.add('active');
+}
+
+/* 飞向国家质心 + 放大 2.2 倍（经度走最短弧） */
+function flyTo(f, done){
+  const c = d3.geoCentroid(f);
+  const r0 = gProjection.rotate();
+  const tl = r0[0] + ((((-c[0]) - r0[0]) % 360) + 540) % 360 - 180;
+  const ri = d3.interpolate([r0[0], r0[1]], [tl, -c[1]]);
+  const si = d3.interpolateNumber(gProjection.scale(), baseScale * 2.2);
+  d3.transition('fly').duration(800).ease(d3.easeCubicInOut)
+    .tween('fly', () => t => { const r = ri(t); gProjection.rotate([r[0], r[1]]); gProjection.scale(si(t)); redrawGlobe(); })
+    .on('end', ()=>{ if (done) done(); });
+}
+
+function handleCountryClick(f){
+  if (state.view !== 'globe' || !f) return;
+  const id = Number(f.id);
+  if (DEMO[id]){ closeCard(); enterCountry(f); }
+  else showCard(f);
+}
+
+/* ── 非演示国家：侧边简介卡 ── */
+async function showCard(f){
+  const id = Number(f.id), en = (f.properties && f.properties.name) || '未知地区';
+  cardOpen = true; cardEl.classList.add('open');
+  cardEl.innerHTML =
+    '<h3 class="card-title">'+esc(zhNameCache[id]||en)+'</h3>'+
+    '<div class="c-en" style="margin-bottom:10px">'+esc(en)+'</div>'+
+    '<div id="card-body">'+skeletonHTML()+'</div>'+
+    '<hr class="rule" style="margin:20px 0 14px">'+
+    '<p class="hint">演示版：详情页仅开放 '+DEMO_LIST+'</p>';
+  const my = ++cardToken;
+  const w = await wiki(en);
+  if (my !== cardToken || !cardOpen) return;
+  const body = document.getElementById('card-body');
+  if (!body) return;
+  if (w && w.extract){
+    if (w.lang === 'zh' && w.title){
+      zhNameCache[id] = w.title;
+      const t = cardEl.querySelector('.card-title'); if (t) t.textContent = w.title;
+    }
+    body.innerHTML = '<p class="extract small">'+esc(w.extract)+'</p>'+
+      (w.url ? '<a class="wiki-link" style="margin-top:4px" href="'+esc(w.url)+'" target="_blank" rel="noopener">在维基百科查看 →</a>' : '');
+  } else {
+    body.innerHTML = '<p class="muted">未找到该条目的维基简介</p>';
+  }
+}
+function closeCard(){ cardOpen = false; cardToken++; cardEl.classList.remove('open'); }
+document.addEventListener('click', (e)=>{ if (cardOpen && !cardEl.contains(e.target)) closeCard(); });
+cardEl.addEventListener('click', (e)=>e.stopPropagation());
+
+/* ════════ 视图切换（整页 crossfade 400ms） ════════ */
+function switchView(name, cb){
+  const show = name==='country' ? viewCountry : viewGlobe;
+  const hide = name==='country' ? viewGlobe : viewCountry;
+  document.body.classList.toggle('in-country', name==='country');
+  hide.classList.add('fading');
+  setTimeout(()=>{
+    hide.classList.add('hidden'); hide.classList.remove('fading');
+    show.classList.remove('hidden'); show.classList.add('fading');
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      show.classList.remove('fading');
+      if (cb) setTimeout(cb, 60);
+    }));
+  }, 400);
+}
+
+function goGlobe(){
+  if (state.view === 'globe') return;
+  paneToken++;                                  // 作废一切进行中的装载
+  d3.select('html').interrupt('fly');
+  const wasShown = !viewCountry.classList.contains('hidden');
+  state.view = 'globe'; state.countryId = null; state.regions = []; state.selected = -1; state.countryInfo = null;
+  gProjection.scale(baseScale); redrawGlobe();
+  setGlobeCaption(null);
+  if (wasShown) switchView('globe');
+}
+
+/* ════════ 视图二：国家详情 ════════ */
+async function enterCountry(f){
+  const id = Number(f.id), demo = DEMO[id];
+  const my = ++paneToken;
+  state.view = 'flying';
+  state.countryId = id; state.regions = []; state.selected = -1;
+  state.countryInfo = { zh: demo.zh, en: (f.properties && f.properties.name) || demo.iso3, wiki: null };
+  document.getElementById('bc-country').textContent = demo.zh;
+  cSvg.selectAll('*').remove();
+  mapLoading.textContent = '正在装载地图…'; mapLoading.style.display = 'block';
+  regionCaption.textContent = '';
+  renderCountryShell(); editPane.scrollTop = 0;
+  const admP = fetchADM1(demo.iso3);                      // 边界与简介并行拉取
+  const animDone = new Promise(res=>flyTo(f, ()=>{
+    if (my !== paneToken) return;                         // 飞行途中被 reset
+    switchView('country', ()=>{ state.view = 'country'; res(); });
+  }));
+  wiki(demo.zh).then(w=>{
+    if (my !== paneToken) return;
+    state.countryInfo.wiki = w; fillWikiSlots(w);
+  });
+  const adm = await admP;
+  await animDone;                                         // 等翻页完成，保证地图区已有尺寸
+  if (my !== paneToken) return;
+  if (adm && Array.isArray(adm.features) && adm.features.length){
+    adm.features.forEach((rf,i)=>{ rf.__i = i; });
+    state.regions = adm.features;
+    mapLoading.style.display = 'none';
+    renderCountryMap(adm, demo.iso3);
+    fillRegionList();
+  } else {
+    mapLoading.textContent = '未能加载省级边界';
+    const slot = document.getElementById('slot-regions');
+    if (slot) slot.innerHTML = '<p class="muted">未能加载行政区划数据</p>';
+  }
+}
+
+/* 右栏骨架（国家页）：标题即时呈现，extract/图版/区划占位 */
+function renderCountryShell(){
+  const ci = state.countryInfo;
+  editPane.innerHTML =
+    '<h1 class="c-title">'+esc(ci.zh)+'</h1>'+
+    '<div class="c-en">'+esc(ci.en)+'</div>'+
+    '<div id="slot-extract">'+skeletonHTML()+'</div>'+
+    '<div id="slot-plate"></div><div id="slot-link"></div>'+
+    '<hr class="rule"><h2 class="sec-title">行 政 区 划</h2>'+
+    '<div id="slot-regions"><div class="skel" style="width:42%"></div><div class="skel" style="width:72%"></div><div class="skel" style="width:55%"></div></div>';
+}
+
+/* 国家页与地区页共用：extract / 图版 / 外链 三个槽位 */
+function fillWikiSlots(w){
+  const ex = document.getElementById('slot-extract');
+  if (!ex) return;
+  if (w && w.extract){
+    ex.innerHTML = '<p class="extract">'+esc(w.extract)+'</p>';
+    document.getElementById('slot-plate').innerHTML = w.thumb
+      ? '<figure class="plate"><img src="'+esc(w.thumb)+'" alt="" onerror="this.parentElement.style.display=\'none\'"><figcaption>图版 · 维基百科图片</figcaption></figure>' : '';
+    document.getElementById('slot-link').innerHTML = w.url
+      ? '<a class="wiki-link" href="'+esc(w.url)+'" target="_blank" rel="noopener">在维基百科查看 →</a>' : '';
+  } else {
+    ex.innerHTML = '<p class="muted">未找到该条目的维基简介</p>';
+  }
+}
+
+function fillRegionList(){
+  const slot = document.getElementById('slot-regions');
+  if (!slot) return;
+  if (!state.regions.length){ slot.innerHTML = '<p class="muted">未能加载行政区划数据</p>'; return; }
+  slot.innerHTML = '<div class="region-list">' + state.regions.map((f,i)=>
+    '<div class="region-item" id="ri-'+i+'" data-i="'+i+'"><span class="ri-no">'+String(i+1).padStart(2,'0')+'</span>'+
+    esc((f.properties && f.properties.shapeName) || '—')+'</div>').join('') + '</div>';
+  slot.querySelectorAll('.region-item').forEach(el=>{
+    const i = +el.dataset.i;
+    el.addEventListener('mouseenter', ()=>hoverRegion(i, true));
+    el.addEventListener('mouseleave', ()=>hoverRegion(i, false));
+    el.addEventListener('click', ()=>handleRegionClick(i));
+  });
+  markSelected();
+}
+
+/* 左侧大幅国家地图：默认 Mercator；俄/美/加 用等积圆锥；均按质心旋转避开反子午线 */
+function renderCountryMap(fc, iso3){
+  const pane = document.getElementById('map-pane');
+  const w = Math.max(pane.clientWidth, 240), h = Math.max(pane.clientHeight, 240);
+  cSvg.attr('width', w).attr('height', h).attr('viewBox', '0 0 '+w+' '+h);
+  const cen = d3.geoCentroid(fc);
+  let proj = (iso3==='RUS'||iso3==='USA'||iso3==='CAN')
+    ? d3.geoConicEqualArea().rotate([-cen[0],0]).parallels([cen[1]-12, cen[1]+12])
+    : d3.geoMercator().rotate([-cen[0],0]);
+  let fit = fc;
+  if (iso3==='USA'){   // 取景时剔除关岛等远洋属地，避免本土被挤成一角
+    fit = {type:'FeatureCollection', features: fc.features.filter(d=>{
+      const c = d3.geoCentroid(d); return c[0] < -50 && c[1] > 15; })};
+  }
+  proj.fitExtent([[32,32],[w-32,h-32]], fit);
+  const path = d3.geoPath(proj);
+  cSvg.selectAll('*').remove();
+  cSvg.append('g').selectAll('path').data(fc.features).join('path')
+    .attr('class','region').attr('id', d=>'rp-'+d.__i).attr('d', path)
+    .style('fill', d=>PAPER_FILLS[d.__i % PAPER_FILLS.length])
+    .on('mouseenter', (e,d)=>hoverRegion(d.__i, true))
+    .on('mouseleave', (e,d)=>hoverRegion(d.__i, false))
+    .on('click', (e,d)=>handleRegionClick(d.__i));
+  markSelected();
+}
+
+/* 地图 ↔ 列表 双向联动 */
+function hoverRegion(i, on){
+  cSvg.select('#rp-'+i).classed('hover', on);
+  const li = document.getElementById('ri-'+i);
+  if (li){ li.classList.toggle('hover', on); if (on) li.scrollIntoView({block:'nearest'}); }
+  const f = state.regions[i];
+  regionCaption.textContent = (on && f) ? ((f.properties && f.properties.shapeName) || '') : '';
+}
+function markSelected(){
+  cSvg.selectAll('path.region').classed('selected', d=>d.__i === state.selected);
+  document.querySelectorAll('.region-item').forEach(el=>el.classList.toggle('selected', +el.dataset.i === state.selected));
+}
+
+/* 右栏平滑替换：先淡出 → 重绘 → 淡入 */
+function swapPane(render){
+  return new Promise(res=>{
+    editPane.classList.add('pane-out');
+    setTimeout(()=>{ render(); editPane.classList.remove('pane-out'); res(); }, 180);
+  });
+}
+
+/* ── 地区文章 ── */
+async function handleRegionClick(i){
+  const f = state.regions[i];
+  if (!f) return;
+  state.selected = i; markSelected();
+  const name = (f.properties && f.properties.shapeName) || '未命名地区';
+  const my = ++paneToken;
+  const swapped = swapPane(()=>{ renderRegionShell(name); editPane.scrollTop = 0; });
+  let w;
+  if (regionWikiCache.has(name)) w = regionWikiCache.get(name);
+  else { w = await wiki(name); regionWikiCache.set(name, w); }
+  await swapped;
+  if (my !== paneToken) return;
+  if (w && w.lang === 'zh' && w.title){
+    const t = document.getElementById('r-title'); if (t) t.textContent = w.title;  // 中文维基命中→中文标题
+  }
+  fillWikiSlots(w);
+}
+
+function renderRegionShell(name){
+  const ci = state.countryInfo;
+  editPane.innerHTML =
+    '<div class="back-line"><button id="btn-back-country" class="text-btn">← 返回 '+esc(ci.zh)+'</button></div>'+
+    '<h1 class="c-title r-size" id="r-title">'+esc(name)+'</h1>'+
+    '<div class="r-sub">'+esc(ci.zh)+' · 一级行政区</div>'+
+    '<div id="slot-extract">'+skeletonHTML()+'</div>'+
+    '<div id="slot-plate"></div><div id="slot-link"></div>';
+  document.getElementById('btn-back-country').addEventListener('click', backToCountry);
+}
+
+function backToCountry(){
+  paneToken++;
+  state.selected = -1; markSelected();
+  swapPane(()=>{
+    renderCountryShell();
+    fillWikiSlots(state.countryInfo.wiki);   // 国家简介已缓存，不再请求
+    fillRegionList();
+    editPane.scrollTop = 0;
+  });
+}
+
+document.getElementById('btn-back').addEventListener('click', goGlobe);
+
+/* ════════ 入口 ════════ */
+(async function init(){
+  try{
+    const r = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+    const topo = await r.json();
+    countries = topojson.feature(topo, topo.objects.countries).features;
+    countries.forEach(f=>{ const n = Number(f.id); if (!Number.isNaN(n)) countryById.set(n, f); });
+    buildGlobe();
+  }catch(e){
+    globeCaption.textContent = '世界地图数据加载失败，请检查网络后刷新';
+    globeCaption.classList.add('active');
+  }
+})();
+
+window.addEventListener('resize', ()=>{
+  if (countries.length) buildGlobe();
+  if (state.view === 'country' && state.regions.length && DEMO[state.countryId]){
+    renderCountryMap({type:'FeatureCollection', features: state.regions}, DEMO[state.countryId].iso3);
+  }
+});
+
+/* 测试钩子：与真实点击走同一处理函数 */
+window.__mockup = {
+  selectCountry(numericId){ const f = countryById.get(Number(numericId)); if (f) handleCountryClick(f); },
+  selectRegion(index){ if (state.regions.length) handleRegionClick(Number(index)); },
+  reset(){ closeCard(); goGlobe(); }
+};
+</script>
+</body>
+</html>
