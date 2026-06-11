@@ -25,7 +25,7 @@
 cd /Users/lsh/.claude/jobs/02f31b41/tmp
 curl -s -G 'https://query.wikidata.org/sparql' \
   -H 'Accept: application/sparql-results+json' \
-  -H 'User-Agent: globe-explorer-dev/0.1 (lshorace227@gmail.com)' \
+  -H 'User-Agent: globe-explorer-dev/0.1 (contact: github.com/lshorace227-dotcom)' \
   --data-urlencode 'query=SELECT ?num ?a3 ?zh ?zhs WHERE { ?c wdt:P299 ?num ; wdt:P298 ?a3 . OPTIONAL { ?c rdfs:label ?zh . FILTER(LANG(?zh)="zh") } OPTIONAL { ?c rdfs:label ?zhs . FILTER(LANG(?zhs)="zh-hans") } }' \
   > sparql-raw.json
 python3 - <<'EOF'
