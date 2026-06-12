@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>寰宇地图册 · ATLAS</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#f6f1e7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="寰宇">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
@@ -36,7 +43,7 @@
 
   /* ── 视图一：地球仪 ── */
   #globe-wrap{ flex:1; min-height:0; }
-  #globe-wrap svg{ display:block; }
+  #globe-wrap svg{ display:block; touch-action:none; }   /* 阻止浏览器接管捏合/滚动，交给球体手势 */
   /* 国家标签：纸色描边保证清晰，pointer-events:none 不挡点击 */
   .g-label{ font-size:11px; fill:var(--ink); text-anchor:middle; dominant-baseline:middle;
     letter-spacing:.05em; paint-order:stroke; stroke:var(--paper); stroke-width:3px;
@@ -627,6 +634,24 @@ function buildGlobe(){
     const s = Math.max(baseScale*0.7, Math.min(baseScale*4, gProjection.scale()*Math.pow(1.0018, -e.deltaY)));
     gProjection.scale(s); redrawGlobe();
   }, {passive:false});
+  /* 触屏双指捏合缩放（拖拽旋转由 d3.drag 的触摸支持处理） */
+  let pinchD = 0;
+  const svgNode = gSvg.node();
+  svgNode.addEventListener('touchstart', (e)=>{
+    if (e.touches.length === 2)
+      pinchD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  }, {passive:true});
+  svgNode.addEventListener('touchmove', (e)=>{
+    if (e.touches.length !== 2) return;
+    e.preventDefault();
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    if (pinchD > 0){
+      const s = Math.max(baseScale*0.7, Math.min(baseScale*4, gProjection.scale() * d / pinchD));
+      gProjection.scale(s); redrawGlobe();
+    }
+    pinchD = d;
+  }, {passive:false});
+  svgNode.addEventListener('touchend', ()=>{ pinchD = 0; }, {passive:true});
   redrawGlobe();
   renderLabels();
 }
@@ -1086,6 +1111,11 @@ window.addEventListener('resize', ()=>{
     }
   }
 });
+
+/* PWA：注册 Service Worker（仅 http(s)，file:// 跳过） */
+if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
 
 /* 测试钩子：与真实点击走同一路由 */
 window.__app = {
