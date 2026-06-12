@@ -89,14 +89,6 @@
     font-style:italic; font-size:14px; color:var(--line); letter-spacing:.2em; pointer-events:none; }
   #region-caption{ position:absolute; left:0; right:0; bottom:14px; text-align:center;
     font-style:italic; font-size:17px; color:var(--ink); pointer-events:none; }
-  /* 详情地图缩放按钮：贴地图右下角，不占文字区 */
-  #map-zoom{ position:absolute; right:10px; bottom:10px; display:none; flex-direction:column; gap:6px; }
-  #map-zoom button{
-    width:34px; height:34px; font-family:inherit; font-size:18px; line-height:1; cursor:pointer;
-    color:var(--ink); background:rgba(246,241,231,.88); border:1px solid var(--line); border-radius:4px;
-    box-shadow:0 2px 8px rgba(43,38,32,.10); user-select:none; -webkit-tap-highlight-color:transparent;
-  }
-  #map-zoom button:active{ background:var(--land); }
 
   #edit-pane{ width:42%; border-left:1px solid var(--rule); padding:40px 48px 64px;
     overflow-y:auto; transition:opacity .18s ease; }
@@ -173,7 +165,6 @@
       <svg id="country-map"></svg>
       <div id="map-loading" style="display:none">正在装载地图…</div>
       <div id="region-caption"></div>
-      <div id="map-zoom" aria-label="地图缩放"><button id="mz-in" title="放大">＋</button><button id="mz-out" title="缩小">－</button></div>
     </div>
     <div id="edit-pane"></div>
   </div>
@@ -460,7 +451,6 @@ const regionCaption = document.getElementById('region-caption');
 const globeCaption  = document.getElementById('globe-caption');
 const cSvg = d3.select('#country-map');
 const cBody = document.querySelector('.country-body');
-const mapZoomCtl = document.getElementById('map-zoom');
 function isNarrow(){ return window.matchMedia('(max-width:900px)').matches; }
 
 let countries = [], countryById = new Map();
@@ -821,7 +811,7 @@ async function enterCountry(f){
   state.countryInfo = { zh: countryZh(id, f), en: (f.properties && f.properties.name) || (entry && entry.a3) || '', wiki: null, feature: f };
   document.getElementById('bc-country').textContent = state.countryInfo.zh;
   cSvg.selectAll('*').remove();
-  cSvg.on('.zoom', null); cZoom = null; mapZoomCtl.style.display = 'none';
+  cSvg.on('.zoom', null); cZoom = null;
   mapLoading.textContent = '正在装载地图…'; mapLoading.style.display = 'block';
   regionCaption.textContent = '';
   renderCountryShell(); editPane.scrollTop = 0; cBody.scrollTop = 0;
@@ -923,7 +913,7 @@ function renderCountryOutline(f){
   const proj = d3.geoMercator().rotate([-cen[0],0]);
   proj.fitExtent([[32,32],[w-32,h-32]], f);
   cSvg.selectAll('*').remove();
-  cSvg.on('.zoom', null); cZoom = null; mapZoomCtl.style.display = 'none';
+  cSvg.on('.zoom', null); cZoom = null;
   cSvg.append('path').datum(f).attr('d', d3.geoPath(proj))
     .attr('class','region').style('fill', PAPER_FILLS[0]).style('cursor','default');
 }
@@ -1023,13 +1013,12 @@ function renderCountryMap(fc, iso3){
     .on('click', (e,d)=>handleRegionClick(d.__i));
   cPath = path;
   cLabels = cSvg.append('g');        // 地区标签层（最上层，不接收事件，不随变换缩放）
-  /* 缩放交互：滚轮/双指捏合/双击/按钮，1x~8x；单指触摸不拦截（留给页面滚动） */
+  /* 缩放交互：滚轮/双指捏合/双击，1x~8x；单指触摸不拦截（留给页面滚动） */
   cZoom = d3.zoom().scaleExtent([1, 8]).translateExtent([[0, 0], [w, h]])
     .filter(e => (!e.ctrlKey || e.type === 'wheel') && !e.button
               && (e.type !== 'touchstart' || (e.touches && e.touches.length >= 2)))
     .on('zoom', (e)=>{ cTransform = e.transform; cRoot.attr('transform', e.transform); scheduleMapLabels(); });
   cSvg.call(cZoom);
-  mapZoomCtl.style.display = 'flex';
   renderMapLabels();
   markSelected();
 }
@@ -1154,9 +1143,6 @@ function backToCountry(){
 document.getElementById('btn-back').addEventListener('click', ()=>nav('#/'));
 document.getElementById('z-in').addEventListener('click', ()=>zoomBy(1.35));
 document.getElementById('z-out').addEventListener('click', ()=>zoomBy(1/1.35));
-function mapZoomBy(f){ if (cZoom) cSvg.transition().duration(220).call(cZoom.scaleBy, f); }
-document.getElementById('mz-in').addEventListener('click', ()=>mapZoomBy(1.4));
-document.getElementById('mz-out').addEventListener('click', ()=>mapZoomBy(1/1.4));
 
 /* ════════ 路由：一切导航统一由 hash 驱动（单一数据流） ════════ */
 function parseHash(){
