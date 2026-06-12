@@ -81,14 +81,22 @@
   .country-body{ flex:1; min-height:0; display:flex; }
 
   #map-pane{ width:58%; position:relative; }
-  #country-map{ position:absolute; inset:0; }
-  .region{ stroke:var(--ink); stroke-width:.6; cursor:pointer; transition:fill .15s; }
+  #country-map{ position:absolute; inset:0; touch-action:pan-y; }   /* 单指留给页面滚动，双指捏合/滚轮缩放地图 */
+  .region{ stroke:var(--ink); stroke-width:.6; cursor:pointer; transition:fill .15s; vector-effect:non-scaling-stroke; }
   .region.hover{ fill:rgba(185,84,58,.45) !important; }
   .region.selected{ fill:var(--terra) !important; stroke:#fff; stroke-width:1; }
   #map-loading{ position:absolute; left:0; right:0; top:46%; text-align:center;
     font-style:italic; font-size:14px; color:var(--line); letter-spacing:.2em; pointer-events:none; }
   #region-caption{ position:absolute; left:0; right:0; bottom:14px; text-align:center;
     font-style:italic; font-size:17px; color:var(--ink); pointer-events:none; }
+  /* 详情地图缩放按钮：贴地图右下角，不占文字区 */
+  #map-zoom{ position:absolute; right:10px; bottom:10px; display:none; flex-direction:column; gap:6px; }
+  #map-zoom button{
+    width:34px; height:34px; font-family:inherit; font-size:18px; line-height:1; cursor:pointer;
+    color:var(--ink); background:rgba(246,241,231,.88); border:1px solid var(--line); border-radius:4px;
+    box-shadow:0 2px 8px rgba(43,38,32,.10); user-select:none; -webkit-tap-highlight-color:transparent;
+  }
+  #map-zoom button:active{ background:var(--land); }
 
   #edit-pane{ width:42%; border-left:1px solid var(--rule); padding:40px 48px 64px;
     overflow-y:auto; transition:opacity .18s ease; }
@@ -128,9 +136,15 @@
   @media (max-width: 900px){
     .country-body{ flex-direction:column; overflow-y:auto; }
     #map-pane{ width:100%; height:46vh; flex:none; }
-    #edit-pane{ width:100%; border-left:none; border-top:1px solid var(--rule); padding:26px 22px 48px; }
+    /* 文字区不再独立滚动：整页一个滚动条，往下拉时地图随之让位；
+       min-height 保证文章即使尚短（骨架期）也滚得动、地图能完全让位 */
+    #edit-pane{ width:100%; border-left:none; border-top:1px solid var(--rule); padding:26px 22px 48px;
+      overflow:visible; flex:none; min-height:88vh; }
     .c-title{ font-size:38px; }
     .c-title.r-size{ font-size:30px; }
+    /* 窄屏页脚改入文档流、居中：避免与地球仪提示行重叠 */
+    #foot{ position:static; flex:none; text-align:center; padding:5px 10px 9px; font-size:10px; letter-spacing:.05em; }
+    #globe-caption{ font-size:11px; letter-spacing:.1em; }   /* 收紧字距保单行 */
   }
 </style>
 </head>
@@ -159,6 +173,7 @@
       <svg id="country-map"></svg>
       <div id="map-loading" style="display:none">正在装载地图…</div>
       <div id="region-caption"></div>
+      <div id="map-zoom" aria-label="地图缩放"><button id="mz-in" title="放大">＋</button><button id="mz-out" title="缩小">－</button></div>
     </div>
     <div id="edit-pane"></div>
   </div>
@@ -444,6 +459,9 @@ const mapLoading  = document.getElementById('map-loading');
 const regionCaption = document.getElementById('region-caption');
 const globeCaption  = document.getElementById('globe-caption');
 const cSvg = d3.select('#country-map');
+const cBody = document.querySelector('.country-body');
+const mapZoomCtl = document.getElementById('map-zoom');
+function isNarrow(){ return window.matchMedia('(max-width:900px)').matches; }
 
 let countries = [], countryById = new Map();
 let zhNameCache = {};                       // numericId → 维基命中的中文名
@@ -803,9 +821,10 @@ async function enterCountry(f){
   state.countryInfo = { zh: countryZh(id, f), en: (f.properties && f.properties.name) || (entry && entry.a3) || '', wiki: null, feature: f };
   document.getElementById('bc-country').textContent = state.countryInfo.zh;
   cSvg.selectAll('*').remove();
+  cSvg.on('.zoom', null); cZoom = null; mapZoomCtl.style.display = 'none';
   mapLoading.textContent = '正在装载地图…'; mapLoading.style.display = 'block';
   regionCaption.textContent = '';
-  renderCountryShell(); editPane.scrollTop = 0;
+  renderCountryShell(); editPane.scrollTop = 0; cBody.scrollTop = 0;
   const animDone = new Promise(res=>flyTo(f, ()=>{
     if (my !== paneToken) return;                         // 飞行途中被 reset
     switchView('country', ()=>{ state.view = 'country'; res(); });
@@ -895,7 +914,7 @@ async function resolveRegionNames(){
   await Promise.all([worker(), worker(), worker(), worker()]);
 }
 
-/* 无 ADM1 数据：画国家轮廓（来自 110m 国界） */
+/* 无 ADM1 数据：画国家轮廓（来自 110m 国界），无缩放交互 */
 function renderCountryOutline(f){
   const pane = document.getElementById('map-pane');
   const w = Math.max(pane.clientWidth, 240), h = Math.max(pane.clientHeight, 240);
@@ -904,6 +923,7 @@ function renderCountryOutline(f){
   const proj = d3.geoMercator().rotate([-cen[0],0]);
   proj.fitExtent([[32,32],[w-32,h-32]], f);
   cSvg.selectAll('*').remove();
+  cSvg.on('.zoom', null); cZoom = null; mapZoomCtl.style.display = 'none';
   cSvg.append('path').datum(f).attr('d', d3.geoPath(proj))
     .attr('class','region').style('fill', PAPER_FILLS[0]).style('cursor','default');
 }
@@ -980,6 +1000,7 @@ function fitFeatures(features){
 
 /* 左侧大幅国家地图：默认 Mercator；俄/美/加 用等积圆锥；均按主体质心旋转避开反子午线 */
 let cPath = null, cLabels = null;   // 详情页地图的 path 与标签层（供名称解析后刷新标签）
+let cRoot = null, cZoom = null, cTransform = d3.zoomIdentity;   // 平移缩放：变换作用在 cRoot，标签层在屏幕坐标重算
 function renderCountryMap(fc, iso3){
   const pane = document.getElementById('map-pane');
   const w = Math.max(pane.clientWidth, 240), h = Math.max(pane.clientHeight, 240);
@@ -992,31 +1013,47 @@ function renderCountryMap(fc, iso3){
   proj.fitExtent([[32,32],[w-32,h-32]], fit);
   const path = d3.geoPath(proj);
   cSvg.selectAll('*').remove();
-  cSvg.append('g').selectAll('path').data(fc.features).join('path')
+  cTransform = d3.zoomIdentity;
+  cRoot = cSvg.append('g');
+  cRoot.append('g').selectAll('path').data(fc.features).join('path')
     .attr('class','region').attr('id', d=>'rp-'+d.__i).attr('d', path)
     .style('fill', d=>PAPER_FILLS[d.__i % PAPER_FILLS.length])
     .on('mouseenter', (e,d)=>hoverRegion(d.__i, true))
     .on('mouseleave', (e,d)=>hoverRegion(d.__i, false))
     .on('click', (e,d)=>handleRegionClick(d.__i));
   cPath = path;
-  cLabels = cSvg.append('g');        // 地区标签层（最上层，不接收事件）
+  cLabels = cSvg.append('g');        // 地区标签层（最上层，不接收事件，不随变换缩放）
+  /* 缩放交互：滚轮/双指捏合/双击/按钮，1x~8x；单指触摸不拦截（留给页面滚动） */
+  cZoom = d3.zoom().scaleExtent([1, 8]).translateExtent([[0, 0], [w, h]])
+    .filter(e => (!e.ctrlKey || e.type === 'wheel') && !e.button
+              && (e.type !== 'touchstart' || (e.touches && e.touches.length >= 2)))
+    .on('zoom', (e)=>{ cTransform = e.transform; cRoot.attr('transform', e.transform); scheduleMapLabels(); });
+  cSvg.call(cZoom);
+  mapZoomCtl.style.display = 'flex';
   renderMapLabels();
   markSelected();
 }
 
-/* 详情页地图的地区标签：与地球仪同规则——名字放得进该地区投影范围才显示 + 防碰撞 */
+/* 详情页地图的地区标签：与地球仪同规则——名字放得进该地区投影范围才显示 + 防碰撞；
+   缩放后在屏幕坐标重算（字号恒定，放大后放得下的小地区会补出标签） */
+let mapLabelTimer = null;
+function scheduleMapLabels(){
+  if (mapLabelTimer) return;
+  mapLabelTimer = setTimeout(()=>{ mapLabelTimer = null; renderMapLabels(); }, 90);
+}
 function renderMapLabels(){
   if (!cLabels || !cPath || !state.regions.length) return;
-  const FS = 11.5;
+  const FS = 11.5, t = cTransform, k = t.k;
+  const W = +cSvg.attr('width') || 0, H = +cSvg.attr('height') || 0;
   const items = [];
   for (const f of state.regions){
     const b = cPath.bounds(f);
     if (!isFinite(b[0][0]) || !isFinite(b[1][0])) continue;
-    const w = b[1][0] - b[0][0], h = b[1][1] - b[0][1];
+    const w = (b[1][0] - b[0][0]) * k, h = (b[1][1] - b[0][1]) * k;
     if (w <= 0 || h <= 0) continue;
     const c = cPath.centroid(f);     // 路径质心比 bbox 中心更贴近地区内部
     if (!isFinite(c[0])) continue;
-    items.push({ f, w, h, cx: c[0], cy: c[1] });
+    items.push({ f, w, h, cx: t.applyX(c[0]), cy: t.applyY(c[1]) });
   }
   items.sort((a, b) => (b.w * b.h) - (a.w * a.h));
   const placed = [], labels = [];
@@ -1025,6 +1062,7 @@ function renderMapLabels(){
     if (!name) continue;
     const tw = labelWidth(name, FS);
     if (tw > it.w * 0.94 || FS * 1.2 > it.h) continue;
+    if (it.cx < -30 || it.cx > W + 30 || it.cy < -20 || it.cy > H + 20) continue;   // 画布外不渲染
     const rect = { x: it.cx - tw/2 - 2, y: it.cy - FS/2 - 1, w: tw + 4, h: FS + 2 };
     let hit = false;
     for (const L of placed){
@@ -1084,6 +1122,11 @@ async function selectRegionNow(i){
     const t = document.getElementById('r-title'); if (t) t.textContent = w.title;  // 中文维基命中→中文标题
   }
   fillWikiSlots(w, name);
+  if (isNarrow()){      // 窄屏：内容就绪后滚到文章区让地图让位（留一条地图边便于滚回）；
+                        // 滚动须在 fillWikiSlots 之后，否则平滑动画会被同帧的布局变化打断
+    const mp = document.getElementById('map-pane');
+    cBody.scrollTo({ top: Math.max(0, mp.offsetHeight - 48), behavior: 'smooth' });
+  }
 }
 
 function renderRegionShell(name){
@@ -1104,13 +1147,16 @@ function backToCountry(){
     renderCountryShell();
     fillWikiSlots(state.countryInfo.wiki, state.countryInfo.zh);   // 国家简介已缓存，不再请求
     fillRegionList();
-    editPane.scrollTop = 0;
+    editPane.scrollTop = 0; cBody.scrollTop = 0;
   });
 }
 
 document.getElementById('btn-back').addEventListener('click', ()=>nav('#/'));
 document.getElementById('z-in').addEventListener('click', ()=>zoomBy(1.35));
 document.getElementById('z-out').addEventListener('click', ()=>zoomBy(1/1.35));
+function mapZoomBy(f){ if (cZoom) cSvg.transition().duration(220).call(cZoom.scaleBy, f); }
+document.getElementById('mz-in').addEventListener('click', ()=>mapZoomBy(1.4));
+document.getElementById('mz-out').addEventListener('click', ()=>mapZoomBy(1/1.4));
 
 /* ════════ 路由：一切导航统一由 hash 驱动（单一数据流） ════════ */
 function parseHash(){
