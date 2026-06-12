@@ -60,16 +60,6 @@
   #foot{ position:fixed; left:26px; bottom:16px; font-size:11px; letter-spacing:.1em; color:var(--line); z-index:5; }
   body.in-country #foot{ display:none; }
 
-  /* ── 缩放按钮：右下角悬浮，纸面风格，不遮挡球体与文字 ── */
-  #zoom-ctl{ position:fixed; right:16px; bottom:64px; z-index:6; display:flex; flex-direction:column; gap:8px; }
-  #zoom-ctl button{
-    width:40px; height:40px; font-family:inherit; font-size:21px; line-height:1; cursor:pointer;
-    color:var(--ink); background:rgba(246,241,231,.88); border:1px solid var(--line); border-radius:4px;
-    box-shadow:0 2px 8px rgba(43,38,32,.10); user-select:none; -webkit-tap-highlight-color:transparent;
-  }
-  #zoom-ctl button:active{ background:var(--land); }
-  body.in-country #zoom-ctl{ display:none; }
-
   /* ── 视图二：国家详情 ── */
   .topbar{ flex:none; display:flex; justify-content:space-between; align-items:baseline;
     padding:13px 32px 10px; border-bottom:1px solid var(--rule); }
@@ -149,11 +139,6 @@
   <div id="globe-wrap"></div>
   <div id="globe-caption">拖 拽 旋 转 · 滚 轮 缩 放 · 点 击 国 家 翻 开 图 册</div>
 </main>
-<div id="zoom-ctl" aria-label="缩放">
-  <button id="z-in" title="放大">＋</button>
-  <button id="z-out" title="缩小">－</button>
-</div>
-
 <!-- 视图二：国家详情（地图册内页） -->
 <main id="view-country" class="view hidden">
   <div class="topbar">
@@ -685,7 +670,7 @@ function buildGlobe(){
   redrawGlobe();
   renderLabels();
 }
-/* 旋转/缩放公共入口（拖拽、触屏、滚轮、按钮共用） */
+/* 旋转/缩放公共入口（拖拽、触屏、滚轮共用） */
 function rotateBy(dx, dy){
   const k = 0.25 * baseScale / gProjection.scale();
   const r = gProjection.rotate();
@@ -696,7 +681,6 @@ function setScale(s){
   gProjection.scale(Math.max(baseScale*0.7, Math.min(baseScale*4, s)));
   redrawGlobe();
 }
-function zoomBy(f){ setScale(gProjection.scale() * f); }
 function redrawGlobe(){ gSvg.selectAll('path').attr('d', gPath); scheduleLabels(); }
 
 /* ── 国家标签：只在「名字能完整放进该国投影范围」时显示，绝不遮挡邻国；
@@ -1141,8 +1125,6 @@ function backToCountry(){
 }
 
 document.getElementById('btn-back').addEventListener('click', ()=>nav('#/'));
-document.getElementById('z-in').addEventListener('click', ()=>zoomBy(1.35));
-document.getElementById('z-out').addEventListener('click', ()=>zoomBy(1/1.35));
 
 /* ════════ 路由：一切导航统一由 hash 驱动（单一数据流） ════════ */
 function parseHash(){
