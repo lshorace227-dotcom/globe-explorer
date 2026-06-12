@@ -1,6 +1,6 @@
 /* 寰宇地图册 Service Worker：壳网络优先（保更新），CDN 库缓存优先（保启动与离线）；
    维基/geoBoundaries 数据请求不经 SW（应用自带 localStorage 缓存层） */
-const VER = 'hy-v1';
+const VER = 'hy-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 const CDN_HOSTS = ['cdn.jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
@@ -20,10 +20,13 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
 
-  // 导航与同源静态：网络优先，失败回缓存（离线仍可开壳）
+  // 导航与同源静态：网络优先且强制重新验证（cache:'no-cache'，否则会命中浏览器 HTTP 缓存吃到陈旧壳），失败回缓存（离线仍可开壳）
   if (e.request.mode === 'navigate' || url.origin === location.origin) {
+    const req = e.request.mode === 'navigate'
+      ? fetch(e.request.url, { cache: 'no-cache' })       // navigate 请求不能直接重构造，用 URL 发起
+      : fetch(e.request, { cache: 'no-cache' });
     e.respondWith(
-      fetch(e.request)
+      req
         .then(r => {
           const cp = r.clone();
           caches.open(VER).then(c => c.put(e.request, cp));

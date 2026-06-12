@@ -60,6 +60,16 @@
   #foot{ position:fixed; left:26px; bottom:16px; font-size:11px; letter-spacing:.1em; color:var(--line); z-index:5; }
   body.in-country #foot{ display:none; }
 
+  /* ── 缩放按钮：右下角悬浮，纸面风格，不遮挡球体与文字 ── */
+  #zoom-ctl{ position:fixed; right:16px; bottom:64px; z-index:6; display:flex; flex-direction:column; gap:8px; }
+  #zoom-ctl button{
+    width:40px; height:40px; font-family:inherit; font-size:21px; line-height:1; cursor:pointer;
+    color:var(--ink); background:rgba(246,241,231,.88); border:1px solid var(--line); border-radius:4px;
+    box-shadow:0 2px 8px rgba(43,38,32,.10); user-select:none; -webkit-tap-highlight-color:transparent;
+  }
+  #zoom-ctl button:active{ background:var(--land); }
+  body.in-country #zoom-ctl{ display:none; }
+
   /* ── 视图二：国家详情 ── */
   .topbar{ flex:none; display:flex; justify-content:space-between; align-items:baseline;
     padding:13px 32px 10px; border-bottom:1px solid var(--rule); }
@@ -133,6 +143,10 @@
   <div id="globe-wrap"></div>
   <div id="globe-caption">拖 拽 旋 转 · 滚 轮 缩 放 · 点 击 国 家 翻 开 图 册</div>
 </main>
+<div id="zoom-ctl" aria-label="缩放">
+  <button id="z-in" title="放大">＋</button>
+  <button id="z-out" title="缩小">－</button>
+</div>
 
 <!-- 视图二：国家详情（地图册内页） -->
 <main id="view-country" class="view hidden">
@@ -444,7 +458,10 @@ function skeletonHTML(){ return '<div class="skel" style="width:58%"></div><div 
 
 /* 个别源数据名称的显示/条目修正：geoBoundaries CHN 将 Taiwan Province 列为 ADM1，
    通用链路会错连到政体条目（中华民国），此处定向改连地理条目 */
-const REGION_OVERRIDES = { 'Taiwan Province': { zh: '台湾省', article: '台湾' } };
+const REGION_OVERRIDES = {
+  'Taiwan Province':    { zh: '台湾省', article: '台湾' },
+  'Guangzhou Province': { zh: '广东省', article: '广东省' }   // geoBoundaries 源数据将广东省错标为 Guangzhou
+};
 
 /* 国家显示名：内置表 → 维基命中缓存 → 争议地区兜底中文名 → 英文 */
 const NAME_ZH_FALLBACK = { 'Kosovo':'科索沃', 'Somaliland':'索马里兰', 'N. Cyprus':'北塞浦路斯' };
@@ -621,40 +638,57 @@ function buildGlobe(){
     .on('click', (e,d)=>{ e.stopPropagation(); handleCountryClick(d); });
   gSvg.append('path').datum({type:'Sphere'}).attr('class','g-rim');
   gLabels = gSvg.append('g');                            // 国家标签层（最上层，不接收事件）
-  /* 拖拽旋转：纬度夹在 ±90，灵敏度随缩放降低 */
-  gSvg.call(d3.drag().on('drag', (e)=>{
-    const k = 0.25 * baseScale / gProjection.scale();
-    const r = gProjection.rotate();
-    gProjection.rotate([r[0] + e.dx*k, Math.max(-90, Math.min(90, r[1] - e.dy*k))]);
-    redrawGlobe();
+  /* 鼠标拖拽旋转（filter 排除触摸：触屏手势全部自管，避免 d3.drag 把双指当两个旋转手势抢事件） */
+  gSvg.call(d3.drag().filter(e => !e.touches).on('drag', (e)=>{
+    rotateBy(e.dx, e.dy);
   }));
   /* 滚轮缩放：0.7x ~ 4x */
   gSvg.node().addEventListener('wheel', (e)=>{
     e.preventDefault();
-    const s = Math.max(baseScale*0.7, Math.min(baseScale*4, gProjection.scale()*Math.pow(1.0018, -e.deltaY)));
-    gProjection.scale(s); redrawGlobe();
+    setScale(gProjection.scale() * Math.pow(1.0018, -e.deltaY));
   }, {passive:false});
-  /* 触屏双指捏合缩放（拖拽旋转由 d3.drag 的触摸支持处理） */
-  let pinchD = 0;
+  /* 触屏：单指旋转，双指捏合缩放 */
+  let touchPrev = null, pinchD = 0;
   const svgNode = gSvg.node();
   svgNode.addEventListener('touchstart', (e)=>{
-    if (e.touches.length === 2)
+    if (e.touches.length === 1){
+      touchPrev = [e.touches[0].clientX, e.touches[0].clientY]; pinchD = 0;
+    } else if (e.touches.length >= 2){
+      touchPrev = null;
       pinchD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    }
   }, {passive:true});
   svgNode.addEventListener('touchmove', (e)=>{
-    if (e.touches.length !== 2) return;
     e.preventDefault();
-    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-    if (pinchD > 0){
-      const s = Math.max(baseScale*0.7, Math.min(baseScale*4, gProjection.scale() * d / pinchD));
-      gProjection.scale(s); redrawGlobe();
+    if (e.touches.length === 1 && touchPrev){
+      const x = e.touches[0].clientX, y = e.touches[0].clientY;
+      rotateBy(x - touchPrev[0], y - touchPrev[1]);
+      touchPrev = [x, y];
+    } else if (e.touches.length >= 2){
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      if (pinchD > 0) setScale(gProjection.scale() * d / pinchD);
+      pinchD = d;
     }
-    pinchD = d;
   }, {passive:false});
-  svgNode.addEventListener('touchend', ()=>{ pinchD = 0; }, {passive:true});
+  svgNode.addEventListener('touchend', (e)=>{
+    pinchD = 0;
+    touchPrev = e.touches.length === 1 ? [e.touches[0].clientX, e.touches[0].clientY] : null;
+  }, {passive:true});
   redrawGlobe();
   renderLabels();
 }
+/* 旋转/缩放公共入口（拖拽、触屏、滚轮、按钮共用） */
+function rotateBy(dx, dy){
+  const k = 0.25 * baseScale / gProjection.scale();
+  const r = gProjection.rotate();
+  gProjection.rotate([r[0] + dx*k, Math.max(-90, Math.min(90, r[1] - dy*k))]);
+  redrawGlobe();
+}
+function setScale(s){
+  gProjection.scale(Math.max(baseScale*0.7, Math.min(baseScale*4, s)));
+  redrawGlobe();
+}
+function zoomBy(f){ setScale(gProjection.scale() * f); }
 function redrawGlobe(){ gSvg.selectAll('path').attr('d', gPath); scheduleLabels(); }
 
 /* ── 国家标签：只在「名字能完整放进该国投影范围」时显示，绝不遮挡邻国；
@@ -854,6 +888,7 @@ async function resolveRegionNames(){
         if (state.selected === i){
           const t = document.getElementById('r-title'); if (t) t.textContent = w.title;
         }
+        renderMapLabels();             // 解析到中文名即刷新地图标签
       }
     }
   }
@@ -944,6 +979,7 @@ function fitFeatures(features){
 }
 
 /* 左侧大幅国家地图：默认 Mercator；俄/美/加 用等积圆锥；均按主体质心旋转避开反子午线 */
+let cPath = null, cLabels = null;   // 详情页地图的 path 与标签层（供名称解析后刷新标签）
 function renderCountryMap(fc, iso3){
   const pane = document.getElementById('map-pane');
   const w = Math.max(pane.clientWidth, 240), h = Math.max(pane.clientHeight, 240);
@@ -962,7 +998,45 @@ function renderCountryMap(fc, iso3){
     .on('mouseenter', (e,d)=>hoverRegion(d.__i, true))
     .on('mouseleave', (e,d)=>hoverRegion(d.__i, false))
     .on('click', (e,d)=>handleRegionClick(d.__i));
+  cPath = path;
+  cLabels = cSvg.append('g');        // 地区标签层（最上层，不接收事件）
+  renderMapLabels();
   markSelected();
+}
+
+/* 详情页地图的地区标签：与地球仪同规则——名字放得进该地区投影范围才显示 + 防碰撞 */
+function renderMapLabels(){
+  if (!cLabels || !cPath || !state.regions.length) return;
+  const FS = 11.5;
+  const items = [];
+  for (const f of state.regions){
+    const b = cPath.bounds(f);
+    if (!isFinite(b[0][0]) || !isFinite(b[1][0])) continue;
+    const w = b[1][0] - b[0][0], h = b[1][1] - b[0][1];
+    if (w <= 0 || h <= 0) continue;
+    const c = cPath.centroid(f);     // 路径质心比 bbox 中心更贴近地区内部
+    if (!isFinite(c[0])) continue;
+    items.push({ f, w, h, cx: c[0], cy: c[1] });
+  }
+  items.sort((a, b) => (b.w * b.h) - (a.w * a.h));
+  const placed = [], labels = [];
+  for (const it of items){
+    const name = it.f.__zh || (it.f.properties && it.f.properties.shapeName) || '';
+    if (!name) continue;
+    const tw = labelWidth(name, FS);
+    if (tw > it.w * 0.94 || FS * 1.2 > it.h) continue;
+    const rect = { x: it.cx - tw/2 - 2, y: it.cy - FS/2 - 1, w: tw + 4, h: FS + 2 };
+    let hit = false;
+    for (const L of placed){
+      if (!(rect.x + rect.w < L.x || L.x + L.w < rect.x || rect.y + rect.h < L.y || L.y + L.h < rect.y)){ hit = true; break; }
+    }
+    if (hit) continue;
+    placed.push(rect);
+    labels.push({ name, x: it.cx, y: it.cy, i: it.f.__i });
+  }
+  cLabels.selectAll('text').data(labels, d => d.i).join('text')
+    .attr('class', 'g-label').attr('x', d => d.x).attr('y', d => d.y)
+    .text(d => d.name);
 }
 
 /* 地图 ↔ 列表 双向联动 */
@@ -1035,6 +1109,8 @@ function backToCountry(){
 }
 
 document.getElementById('btn-back').addEventListener('click', ()=>nav('#/'));
+document.getElementById('z-in').addEventListener('click', ()=>zoomBy(1.35));
+document.getElementById('z-out').addEventListener('click', ()=>zoomBy(1/1.35));
 
 /* ════════ 路由：一切导航统一由 hash 驱动（单一数据流） ════════ */
 function parseHash(){
